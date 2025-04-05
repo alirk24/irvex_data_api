@@ -24,11 +24,10 @@ class ExchangeDataCache:
         async with self._lock:
             if stock_id not in self.data:
                 self.data[stock_id] = self._create_empty_stock_structure()
-    
     def _create_empty_stock_structure(self):
         """Create an empty data structure for a stock"""
         # This matches the structure from the provided code
-        return {
+        stock_data = {
             # Time-related fields
             'time': [],
             'tim_index': [],
@@ -71,7 +70,53 @@ class ExchangeDataCache:
                for prefix in ['hmb', 'hms', 'wmb', 'wms', 'Nhmb', 'Nhms'] 
                for field in ['time', 'vol', 'number', 'value', 'volume-comulative', 'value-comulative', 'count']}
         }
+        
+        # Add metadata fields (these will be filled later)
+        stock_data['metadata'] = {
+            'name': '',
+            'Full_name': '',
+            'CGrValCot': '',
+            'industry_num': '',
+            'Exchange': '',
+            'valid': '',
+            'exchange_name': '',
+            'industry_name': ''
+        }
+        
+        return stock_data
     
+    async def update_metadata(self, metadata):
+        """Update the metadata for all stocks"""
+        async with self._lock:
+            self.metadata = metadata
+            
+            # Also update metadata for existing stocks in the cache
+            for stock_id, stock_meta in metadata.items():
+                if stock_id in self.data:
+                    self.data[stock_id]['metadata'] = {
+                        'name': stock_meta.get('name', ''),
+                        'Full_name': stock_meta.get('Full_name', ''),
+                        'CGrValCot': stock_meta.get('CGrValCot', ''),
+                        'industry_num': stock_meta.get('industry_num', ''),
+                        'Exchange': stock_meta.get('Exchange', ''),
+                        'valid': stock_meta.get('valid', ''),
+                        'exchange_name': stock_meta.get('exchange_name', ''),
+                        'industry_name': stock_meta.get('industry_name', '')
+                    }
+    
+    async def get_all_metadata(self):
+        """Get metadata for all stocks"""
+        async with self._lock:
+            return self.metadata
+            
+    async def get_stock_metadata(self, stock_id):
+        """Get metadata for a specific stock"""
+        async with self._lock:
+            if stock_id in self.data and 'metadata' in self.data[stock_id]:
+                return self.data[stock_id]['metadata']
+            elif stock_id in self.metadata:
+                return self.metadata[stock_id]
+            return {}
     async def update_data(self, api_data):
         """Update the cache with new data from the API"""
         if not api_data:
@@ -80,7 +125,9 @@ class ExchangeDataCache:
             
         self.last_update = datetime.now()
         logger.info(f"Updating cache with new data at {self.last_update}")
-        
+        # Update metadata if available
+        if 'metadata' in api_data and api_data['metadata']:
+            await self.update_metadata(api_data['metadata'])
         # Process the data similar to the provided code's main_api function
         client_type_data = api_data.get('client_type', {})
         trade_data = api_data.get('trade_data', {})

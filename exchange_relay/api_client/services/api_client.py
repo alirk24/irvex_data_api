@@ -5,7 +5,7 @@ import xmltodict
 import datetime
 import traceback
 from typing import Dict, Any
-
+from .stock_metadata import get_metadata_client
 class IranExchangeClient:
     def __init__(self):
         self.base_url = "http://service.tsetmc.com/webservice/TsePublicV2.asmx"
@@ -13,8 +13,8 @@ class IranExchangeClient:
             'Content-Type': 'application/soap+xml; charset=utf-8',
             'Host': 'service.tsetmc.com'
         }
-        self.username = "aryasarmaye.ir"
-        self.password = "@rY@sar1\/1ayE.!R"
+        self.username = "stocksgame"
+        self.password = "$T030K$g@m3.!r"
         
     async def fetch_client_type(self) -> Dict[str, Any]:
         """Fetch client type data from the exchange API"""
@@ -126,10 +126,22 @@ class IranExchangeClient:
                 print(f"Error in fetch_best_limits_all_ins for flow {flow}: {e}")
                 return {}
     
+  
+    
     async def fetch_all_data(self):
         try:
             """Fetch all data from the exchange API in parallel"""
             print("Starting to fetch data from Iran Exchange API...")
+            
+            # First, get the metadata client and ensure it's updated
+            metadata_client = get_metadata_client()
+            await metadata_client.fetch_metadata()
+            
+            # Get the list of valid stock IDs to filter data
+            valid_stock_ids = metadata_client.get_stock_ids()
+            print(f"Found {len(valid_stock_ids)} valid stocks in metadata")
+            
+            # Existing code to fetch data...
             tasks = [
                 self.fetch_client_type(),
                 self.fetch_trade_last_day_all(1),
@@ -170,13 +182,23 @@ class IranExchangeClient:
             limits_data.update(processed_results[6] or {})  # Flow 4
             limits_data.update(processed_results[8] or {})  # Flow 7
             
-            print(f"Successfully fetched data: {len(client_type_data)} client types, {len(trade_data)} trades, {len(limits_data)} limits")
+            # Filter data to only include valid stocks from metadata
+            filtered_client_type = {k: v for k, v in client_type_data.items() if k in valid_stock_ids}
+            filtered_trade_data = {k: v for k, v in trade_data.items() if k in valid_stock_ids}
+            filtered_limits_data = {k: v for k, v in limits_data.items() if k in valid_stock_ids}
+            
+            print(f"Successfully fetched data: {len(filtered_client_type)} client types, {len(filtered_trade_data)} trades, {len(filtered_limits_data)} limits (after filtering)")
+            
+            # Get simplified metadata
+            stock_metadata = metadata_client.get_simplified_metadata()
             
             return {
-                'client_type': client_type_data,
-                'trade_data': trade_data,
-                'limits_data': limits_data
+                'client_type': filtered_client_type,
+                'trade_data': filtered_trade_data,
+                'limits_data': filtered_limits_data,
+                'metadata': stock_metadata
             }
+            
         except Exception as e:
             print(f"Error fetching data: {type(e).__name__}: {str(e)}")
             traceback.print_exc()
@@ -184,9 +206,9 @@ class IranExchangeClient:
             return {
                 'client_type': {},
                 'trade_data': {},
-                'limits_data': {}
+                'limits_data': {},
+                'metadata': {}
             }
-            
     async def update_cache(self):
         """Fetch all data and update the cache"""
         from api_client.services.cache_manager import get_cache

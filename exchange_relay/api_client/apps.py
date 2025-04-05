@@ -13,6 +13,8 @@ class ApiClientConfig(AppConfig):
     name = 'api_client'
     
     def ready(self):
+        from .services.cache_manager import get_cache
+        self.cache_instance = get_cache()
         # For commands like migrate, collectstatic, etc.
         if len(sys.argv) > 1 and sys.argv[1] in ['check', 'test', 'makemigrations', 'migrate', 'collectstatic']:
             logger.info("Not starting background task: Django command")
@@ -53,12 +55,22 @@ class ApiClientConfig(AppConfig):
                 # Get the shared cache instance
                 cache_instance = get_cache()
                 
+                # Set the cache instance as a class attribute to make it accessible to views
+                from django.apps import apps
+                apps.get_app_config('api_client').cache_instance = cache_instance
+                
                 # Define the data fetching task
                 async def fetch_data_job():
                     try:
                         logger.info("Fetching data from Iran Exchange API...")
                         data = await api_client.fetch_all_data()
                         if data:
+                            # Update the cache with metadata first
+                            if 'metadata' in data and data['metadata']:
+                                await cache_instance.update_metadata(data['metadata'])
+                                logger.info(f"Metadata updated successfully with {len(data['metadata'])} stocks")
+                            
+                            # Then update with the actual data
                             await cache_instance.update_data(data)
                             logger.info(f"Data fetched and cache updated successfully with {len(data.get('trade_data', {}))} stocks")
                         else:
@@ -94,7 +106,6 @@ class ApiClientConfig(AppConfig):
                 logger.error(f"Error in background thread: {e}")
                 import traceback
                 logger.error(traceback.format_exc())
-        
         # Start the background thread
         logger.info("Creating background thread for data fetching")
         self.thread = Thread(target=run_fetcher, daemon=True)

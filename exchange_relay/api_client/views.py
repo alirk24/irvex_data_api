@@ -121,4 +121,24 @@ class DiagnosticView(View):
                 'last_price': data.get('pl', [-1])[-1] if data.get('pl') else None,
             })
             
-        return JsonResponse(stats)
+
+    
+
+class StockMetadataView(APIView):
+    """API view to get stock metadata from the cache"""
+    
+    def get(self, request, stock_id=None):
+        # Get the cache instance
+        cache_instance = apps.get_app_config('api_client').cache_instance
+        
+        # Use the event loop to run the async function
+        loop = asyncio.get_event_loop()
+        
+        if stock_id:
+            # Get metadata for a specific stock
+            metadata = loop.run_until_complete(cache_instance.get_stock_metadata(stock_id))
+            return Response(metadata)
+        else:
+            # Get metadata for all stocks
+            all_metadata = loop.run_until_complete(cache_instance.get_all_metadata())
+            return Response(all_metadata)

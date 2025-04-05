@@ -100,63 +100,75 @@ class ExchangeDataConsumer(AsyncWebsocketConsumer):
                     # No stocks to update, sleep briefly and check again
                     await asyncio.sleep(1)
                     continue
-                
-                # Check if we have any data at all in the cache
-                all_data = await self.cache_instance.get_all_data()
-                if not all_data:
-                    print("No data in cache yet, waiting for initial data load...")
-                    await asyncio.sleep(5)  # Wait longer for initial data
-                    continue
-                
-                # Debug print to check if data is available
-                missing_stocks = []
-                for stock_code in self.subscribed_stocks:
-                    stock_data = await self.cache_instance.get_stock_data(stock_code)
-                    if not stock_data or not stock_data.get('time'):
-                        missing_stocks.append(stock_code)
-                
-                if missing_stocks:
-                    print(f"Missing data for stocks: {missing_stocks}")
-                
-                # Gather updates for all subscribed stocks
-                updates = {}
-                for stock_code in self.subscribed_stocks:
-                    # Get the latest data for this stock
-                    stock_data = await self.cache_instance.get_stock_data(stock_code)
+                try:
+                    # Check if we have any data at all in the cache
+                    all_data = await self.cache_instance.get_all_data()
+                    if not all_data:
+                        print("No data in cache yet, waiting for initial data load...")
+                        await asyncio.sleep(2)  # Wait longer for initial data
+                        continue
                     
-                    if stock_data and stock_data.get('time') and stock_data['time']:
-                        # Create a summary with the most important fields
-                        updates[stock_code] = {
-                            'timestamp': stock_data['time'][-1].isoformat() if stock_data.get('time') and stock_data['time'] else None,
-                            'price': {
-                                'last': stock_data['pl'][-1] if stock_data.get('pl') and stock_data['pl'] else None,
-                                'closing': stock_data['pc'][-1] if stock_data.get('pc') and stock_data['pc'] else None,
-                                'min': stock_data['pmin'][-1] if stock_data.get('pmin') and stock_data['pmin'] else None,
-                                'max': stock_data['pmax'][-1] if stock_data.get('pmax') and stock_data['pmax'] else None
-                            },
-                            'volume': stock_data['tvol'][-1] if stock_data.get('tvol') and stock_data['tvol'] else None,
-                            'value': stock_data['tval'][-1] if stock_data.get('tval') and stock_data['tval'] else None,
-                            'transactions': stock_data['tno'][-1] if stock_data.get('tno') and stock_data['tno'] else None,
-                            'client_type': {
-                                'buy_legal': stock_data['Buy_I_Volume'][-1] if stock_data.get('Buy_I_Volume') and stock_data['Buy_I_Volume'] else None,
-                                'buy_natural': stock_data['Buy_N_Volume'][-1] if stock_data.get('Buy_N_Volume') and stock_data['Buy_N_Volume'] else None,
-                                'sell_legal': stock_data['Sell_I_Volume'][-1] if stock_data.get('Sell_I_Volume') and stock_data['Sell_I_Volume'] else None,
-                                'sell_natural': stock_data['Sell_N_Volume'][-1] if stock_data.get('Sell_N_Volume') and stock_data['Sell_N_Volume'] else None
+                    # Debug print to check if data is available
+                    missing_stocks = []
+                    for stock_code in self.subscribed_stocks:
+                        stock_data = await self.cache_instance.get_stock_data(stock_code)
+                        if not stock_data or not stock_data.get('time'):
+                            missing_stocks.append(stock_code)
+                    
+                    if missing_stocks:
+                        print(f"Missing data for stocks: {missing_stocks}")
+                    
+                    # Gather updates for all subscribed stocks
+                    updates = {}
+                    for stock_code in self.subscribed_stocks:
+                        # Get the latest data for this stock
+                        stock_data = await self.cache_instance.get_stock_data(stock_code)
+                        
+                        if stock_data and stock_data.get('time') and stock_data['time']:
+                            # Create a summary with the most important fields
+                            updates[stock_code] = {
+                                'timestamp': stock_data['time'][-1].isoformat() if stock_data.get('time') and stock_data['time'] else None,
+                                'price': {
+                                    'last': stock_data['pl'][-1] if stock_data.get('pl') and stock_data['pl'] else None,
+                                    'closing': stock_data['pc'][-1] if stock_data.get('pc') and stock_data['pc'] else None,
+                                    'min': stock_data['pmin'][-1] if stock_data.get('pmin') and stock_data['pmin'] else None,
+                                    'max': stock_data['pmax'][-1] if stock_data.get('pmax') and stock_data['pmax'] else None
+                                },
+                                'volume': stock_data['tvol'][-1] if stock_data.get('tvol') and stock_data['tvol'] else None,
+                                'value': stock_data['tval'][-1] if stock_data.get('tval') and stock_data['tval'] else None,
+                                'transactions': stock_data['tno'][-1] if stock_data.get('tno') and stock_data['tno'] else None,
+                                'client_type': {
+                                    'buy_legal': stock_data['Buy_I_Volume'][-1] if stock_data.get('Buy_I_Volume') and stock_data['Buy_I_Volume'] else None,
+                                    'buy_natural': stock_data['Buy_N_Volume'][-1] if stock_data.get('Buy_N_Volume') and stock_data['Buy_N_Volume'] else None,
+                                    'sell_legal': stock_data['Sell_I_Volume'][-1] if stock_data.get('Sell_I_Volume') and stock_data['Sell_I_Volume'] else None,
+                                    'sell_natural': stock_data['Sell_N_Volume'][-1] if stock_data.get('Sell_N_Volume') and stock_data['Sell_N_Volume'] else None
+                                },
+                                # Include metadata
+                                'metadata': stock_data.get('metadata', {})
                             }
-                        }
-                
-                # Only send if we have updates
-                if updates:
-                    print(f"Sending updates for {len(updates)} stocks")
+                    
+                    # Only send if we have updates
+                    if updates:
+                        print(f"Sending updates for {len(updates)} stocks")
+                        await self.send(text_data=json.dumps({
+                            'type': 'stock_update',
+                            'timestamp': asyncio.get_event_loop().time(),
+                            'data': updates
+                        }))
+                    else:
+                        print("No updates to send")
+                except Exception as inner_error:
+                    # Log the error but continue the loop
+                    print(f"Error processing updates: {inner_error}")
+                    import traceback
+                    traceback.print_exc()
+                    # Notify the client about the error
                     await self.send(text_data=json.dumps({
-                        'type': 'stock_update',
-                        'timestamp': asyncio.get_event_loop().time(),
-                        'data': updates
+                        'type': 'error',
+                        'message': f'Error processing updates: {str(inner_error)}'
                     }))
-                else:
-                    print("No updates to send")
-                
-                # Wait before sending the next update (2 seconds)
+                        
+                    # Wait before sending the next update (2 seconds)
                 await asyncio.sleep(2)
                 
         except asyncio.CancelledError:
