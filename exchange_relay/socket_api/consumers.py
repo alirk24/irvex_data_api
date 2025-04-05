@@ -3,19 +3,15 @@ import json
 import asyncio
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.apps import apps
-import json
-import asyncio
-from channels.generic.websocket import AsyncWebsocketConsumer
-from api_client.services.cache_manager import ExchangeDataCache
-
-# Create a singleton cache instance
-cache_instance = ExchangeDataCache()
+from api_client.services.cache_manager import get_cache
 
 class ExchangeDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.subscribed_stocks = set()
         self.update_task = None
+        # Get the shared cache instance
+        self.cache_instance = get_cache()
         
     async def connect(self):
         print("Client connecting to WebSocket")
@@ -99,22 +95,36 @@ class ExchangeDataConsumer(AsyncWebsocketConsumer):
     async def send_stock_updates(self):
         """Background task to send stock updates to the client"""
         try:
-            # Get the cache instance from the app config
-            global cache_instance            
-            
             while True:
                 if not self.subscribed_stocks:
                     # No stocks to update, sleep briefly and check again
                     await asyncio.sleep(1)
                     continue
                 
+                # Check if we have any data at all in the cache
+                all_data = await self.cache_instance.get_all_data()
+                if not all_data:
+                    print("No data in cache yet, waiting for initial data load...")
+                    await asyncio.sleep(5)  # Wait longer for initial data
+                    continue
+                
+                # Debug print to check if data is available
+                missing_stocks = []
+                for stock_code in self.subscribed_stocks:
+                    stock_data = await self.cache_instance.get_stock_data(stock_code)
+                    if not stock_data or not stock_data.get('time'):
+                        missing_stocks.append(stock_code)
+                
+                if missing_stocks:
+                    print(f"Missing data for stocks: {missing_stocks}")
+                
                 # Gather updates for all subscribed stocks
                 updates = {}
                 for stock_code in self.subscribed_stocks:
                     # Get the latest data for this stock
-                    stock_data = await cache_instance.get_stock_data(stock_code)
+                    stock_data = await self.cache_instance.get_stock_data(stock_code)
                     
-                    if stock_data:
+                    if stock_data and stock_data.get('time') and stock_data['time']:
                         # Create a summary with the most important fields
                         updates[stock_code] = {
                             'timestamp': stock_data['time'][-1].isoformat() if stock_data.get('time') and stock_data['time'] else None,
@@ -137,11 +147,14 @@ class ExchangeDataConsumer(AsyncWebsocketConsumer):
                 
                 # Only send if we have updates
                 if updates:
+                    print(f"Sending updates for {len(updates)} stocks")
                     await self.send(text_data=json.dumps({
                         'type': 'stock_update',
                         'timestamp': asyncio.get_event_loop().time(),
                         'data': updates
                     }))
+                else:
+                    print("No updates to send")
                 
                 # Wait before sending the next update (2 seconds)
                 await asyncio.sleep(2)
@@ -153,6 +166,8 @@ class ExchangeDataConsumer(AsyncWebsocketConsumer):
         except Exception as e:
             # Log any errors
             print(f"Error in send_stock_updates: {e}")
+            import traceback
+            traceback.print_exc()
             # Try to notify the client
             try:
                 await self.send(text_data=json.dumps({

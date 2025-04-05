@@ -1,10 +1,9 @@
-from django.apps import AppConfig
-
 # api_client/apps.py
 from django.apps import AppConfig
 import asyncio
-import aiocron
 import logging
+import sys
+import os
 from threading import Thread
 
 logger = logging.getLogger(__name__)
@@ -14,13 +13,26 @@ class ApiClientConfig(AppConfig):
     name = 'api_client'
     
     def ready(self):
-        # Don't run on migrations or other management commands
-        import sys
-        if 'runserver' not in sys.argv and 'daphne' not in sys.argv:
+        # For commands like migrate, collectstatic, etc.
+        if len(sys.argv) > 1 and sys.argv[1] in ['check', 'test', 'makemigrations', 'migrate', 'collectstatic']:
+            logger.info("Not starting background task: Django command")
             return
+            
+        # Always start background task when running with Daphne
+        is_daphne = 'daphne' in sys.argv[0] if len(sys.argv) > 0 else False
         
-        # Start the background task for data fetching    
-        self.start_background_task()
+        # For runserver, only start in the main process
+        is_runserver = 'runserver' in sys.argv if len(sys.argv) > 1 else False
+        is_main_process = not os.environ.get('RUN_MAIN', False)
+
+        # We want to start the background task either:
+        # 1. When running with Daphne, or
+        # 2. When running with runserver in the main process
+        if is_daphne or (is_runserver and not is_main_process):
+            logger.info(f"Starting background task: is_daphne={is_daphne}, is_runserver={is_runserver}")
+            self.start_background_task()
+        else:
+            logger.info(f"Not starting background task: is_daphne={is_daphne}, is_runserver={is_runserver}, is_main={is_main_process}")
     
     def start_background_task(self):
         # Import here to avoid circular imports
@@ -28,50 +40,63 @@ class ApiClientConfig(AppConfig):
         from .services.cache_manager import get_cache
         
         def run_fetcher():
-            # Create a new event loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            # Create the API client
-            api_client = IranExchangeClient()
-            
-            # Define the data fetching task
-            async def fetch_data_job():
-                try:
-                    logger.info("Fetching data from Iran Exchange API...")
-                    await api_client.update_cache()
-                    logger.info("Data fetched and cache updated successfully")
-                except Exception as e:
-                    logger.error(f"Error fetching data: {e}")
-            
-            # Run the initial fetch
-            loop.run_until_complete(fetch_data_job())
-            
-            # Schedule regular updates (every 60 seconds)
-            async def scheduled_updates():
-                while True:
+            try:
+                logger.info("Starting data fetcher thread")
+                
+                # Create a new event loop for this thread
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                
+                # Create the API client
+                api_client = IranExchangeClient()
+                
+                # Get the shared cache instance
+                cache_instance = get_cache()
+                
+                # Define the data fetching task
+                async def fetch_data_job():
                     try:
-                        await asyncio.sleep(60)  # Wait 60 seconds between updates
-                        await fetch_data_job()
+                        logger.info("Fetching data from Iran Exchange API...")
+                        data = await api_client.fetch_all_data()
+                        if data:
+                            await cache_instance.update_data(data)
+                            logger.info(f"Data fetched and cache updated successfully with {len(data.get('trade_data', {}))} stocks")
+                        else:
+                            logger.error("No data returned from API")
                     except Exception as e:
-                        logger.error(f"Error in scheduled update: {e}")
-                        await asyncio.sleep(5)  # Wait 5 seconds before retrying after an error
-            
-            # Start the scheduled updates
-            loop.create_task(scheduled_updates())
-            
-            # Run the event loop forever
-            loop.run_forever()
+                        logger.error(f"Error fetching data: {e}")
+                        import traceback
+                        logger.error(traceback.format_exc())
+                
+                # Run the initial fetch
+                logger.info("Running initial data fetch...")
+                loop.run_until_complete(fetch_data_job())
+                
+                # Schedule regular updates (every 60 seconds)
+                async def scheduled_updates():
+                    while True:
+                        try:
+                            await asyncio.sleep(60)  # Wait 60 seconds between updates
+                            await fetch_data_job()
+                        except Exception as e:
+                            logger.error(f"Error in scheduled update: {e}")
+                            await asyncio.sleep(5)  # Wait 5 seconds before retrying after an error
+                
+                # Start the scheduled updates
+                logger.info("Starting scheduled updates...")
+                loop.create_task(scheduled_updates())
+                
+                # Run the event loop forever
+                logger.info("Running event loop")
+                loop.run_forever()
+                
+            except Exception as e:
+                logger.error(f"Error in background thread: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
         
         # Start the background thread
+        logger.info("Creating background thread for data fetching")
         self.thread = Thread(target=run_fetcher, daemon=True)
         self.thread.start()
-    async def fetch_initial_data(self):
-        """Fetch initial data on startup"""
-        try:
-            logger.info("Fetching initial data from Iran Exchange API...")
-            data = await self.api_client.fetch_all_data()
-            await self.cache_instance.update_data(data)
-            logger.info("Initial data fetched successfully")
-        except Exception as e:
-            logger.error(f"Error fetching initial data: {e}")
+        logger.info("Background thread for data fetching started")

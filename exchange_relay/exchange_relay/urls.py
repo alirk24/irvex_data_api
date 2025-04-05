@@ -15,13 +15,12 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path,include
+from django.urls import path, include
+from api_client.views import DiagnosticView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-]
-# Add to exchange_relay/urls.py
-urlpatterns += [
-    # ... existing paths
+    path('api/', include('api_client.urls')),
     path('socket/', include('socket_api.urls')),
+    path('diagnostic/', DiagnosticView.as_view(), name='diagnostic'),
 ]

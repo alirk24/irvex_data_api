@@ -3,6 +3,7 @@ import httpx
 import asyncio
 import xmltodict
 import datetime
+import traceback
 from typing import Dict, Any
 
 class IranExchangeClient:
@@ -62,8 +63,6 @@ class IranExchangeClient:
                 
             return dict_trade_last_day
     
-    # api_client/services/api_client.py
-
     async def fetch_best_limits_all_ins(self, flow: int) -> Dict[str, Any]:
         """Fetch best limits for all instruments with given flow"""
         body = f"""<?xml version="1.0" encoding="utf-8"?>
@@ -107,7 +106,7 @@ class IranExchangeClient:
                         print(f"Unexpected XML structure: {dict_data.keys()}")
                         return {}
                         
-                except xml.parsers.expat.ExpatError as xml_err:
+                except Exception as xml_err:
                     print(f"XML Parsing error in fetch_best_limits_all_ins for flow {flow}: {xml_err}")
                     print(f"First 200 chars of response: {response.content[:200]}")
                     
@@ -130,7 +129,6 @@ class IranExchangeClient:
     async def fetch_all_data(self):
         try:
             """Fetch all data from the exchange API in parallel"""
-            """Fetch all data from the exchange API in parallel"""
             print("Starting to fetch data from Iran Exchange API...")
             tasks = [
                 self.fetch_client_type(),
@@ -144,24 +142,36 @@ class IranExchangeClient:
                 self.fetch_best_limits_all_ins(7)
             ]
             
-            results = await asyncio.gather(*tasks)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
             
-            client_type_data = results[0]
+            # Process results, handling any exceptions
+            processed_results = []
+            for result in results:
+                if isinstance(result, Exception):
+                    print(f"Error in one of the fetch tasks: {result}")
+                    processed_results.append({})  # Add empty dict for failed tasks
+                else:
+                    processed_results.append(result)
             
-            # Combine trade data from different flows
+            # Extract data from processed results
+            client_type_data = processed_results[0] if not isinstance(processed_results[0], Exception) else {}
+            
+            # Combine trade data from different flows, handling potential exceptions
             trade_data = {}
-            trade_data.update(results[1])  # Flow 1
-            trade_data.update(results[3])  # Flow 2
-            trade_data.update(results[5])  # Flow 4
-            trade_data.update(results[7])  # Flow 7
+            trade_data.update(processed_results[1] or {})  # Flow 1
+            trade_data.update(processed_results[3] or {})  # Flow 2
+            trade_data.update(processed_results[5] or {})  # Flow 4
+            trade_data.update(processed_results[7] or {})  # Flow 7
             
-            # Combine best limits data from different flows
+            # Combine best limits data from different flows, handling potential exceptions
             limits_data = {}
-            limits_data.update(results[2])  # Flow 1
-            limits_data.update(results[4])  # Flow 2
-            limits_data.update(results[6])  # Flow 4
-            limits_data.update(results[8])  # Flow 7
+            limits_data.update(processed_results[2] or {})  # Flow 1
+            limits_data.update(processed_results[4] or {})  # Flow 2
+            limits_data.update(processed_results[6] or {})  # Flow 4
+            limits_data.update(processed_results[8] or {})  # Flow 7
+            
             print(f"Successfully fetched data: {len(client_type_data)} client types, {len(trade_data)} trades, {len(limits_data)} limits")
+            
             return {
                 'client_type': client_type_data,
                 'trade_data': trade_data,
@@ -169,12 +179,27 @@ class IranExchangeClient:
             }
         except Exception as e:
             print(f"Error fetching data: {type(e).__name__}: {str(e)}")
-            import traceback
             traceback.print_exc()
-            raise
+            # Return an empty result rather than raising an exception
+            return {
+                'client_type': {},
+                'trade_data': {},
+                'limits_data': {}
+            }
+            
     async def update_cache(self):
         """Fetch all data and update the cache"""
-        data = await self.fetch_all_data()
-        cache = get_cache()
-        await cache.update_data(data)
-        return data
+        from api_client.services.cache_manager import get_cache
+        try:
+            data = await self.fetch_all_data()
+            if data:
+                cache = get_cache()
+                await cache.update_data(data)
+                print(f"Cache updated successfully with {len(data.get('trade_data', {}))} stocks")
+            else:
+                print("No data received from API to update cache")
+            return data
+        except Exception as e:
+            print(f"Error updating cache: {e}")
+            traceback.print_exc()
+            return None

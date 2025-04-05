@@ -4,6 +4,64 @@ from rest_framework.response import Response
 from django.apps import apps
 import asyncio
 from django.http import JsonResponse  # Import jsonResponse
+
+
+from django.views import View
+from django.http import JsonResponse
+from django.apps import apps
+import asyncio
+import traceback
+
+class DebugApiView(View):
+    def get(self, request):
+        """View to manually trigger API fetch and see results"""
+        try:
+            # Import the API client
+            from api_client.services.api_client import IranExchangeClient
+            from api_client.services.cache_manager import get_cache
+            
+            # Create client and cache instances
+            api_client = IranExchangeClient()
+            cache = get_cache()
+            
+            # Run the data fetch in the current thread (for debugging)
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # Try to fetch data and update cache
+                data = loop.run_until_complete(api_client.fetch_all_data())
+                if data:
+                    loop.run_until_complete(cache.update_data(data))
+                    result = {
+                        'success': True,
+                        'client_types': len(data.get('client_type', {})),
+                        'trades': len(data.get('trade_data', {})),
+                        'limits': len(data.get('limits_data', {})),
+                        'cache_status': 'updated'
+                    }
+                else:
+                    result = {
+                        'success': False, 
+                        'error': 'No data returned from API'
+                    }
+            except Exception as e:
+                result = {
+                    'success': False,
+                    'error': str(e),
+                    'traceback': traceback.format_exc()
+                }
+            
+            return JsonResponse(result)
+            
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e),
+                'traceback': traceback.format_exc()
+            })
+
+
 class StockDataView(APIView):
     """API view to get stock data from the cache"""
     
@@ -31,19 +89,13 @@ class StockDataView(APIView):
             }
             return Response(summary)
 
-# api_client/urls.py
-from django.urls import path
-from .views import StockDataView
-
-urlpatterns = [
-    path('stocks/', StockDataView.as_view(), name='all-stocks'),
-    path('stocks/<str:stock_code>/', StockDataView.as_view(), name='stock-detail'),
-]
 
 class DiagnosticView(View):
     def get(self, request):
-        cache_instance = apps.get_app_config('api_client').cache_instance
-        loop = asyncio.get_event_loop()
+        from api_client.services.cache_manager import get_cache
+        cache_instance = get_cache()
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
         
         # Get a summary of the cache
         all_data = loop.run_until_complete(cache_instance.get_all_data())
