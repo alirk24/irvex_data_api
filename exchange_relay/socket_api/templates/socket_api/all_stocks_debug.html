@@ -1,0 +1,357 @@
+<!-- socket_api/templates/socket_api/all_stocks_debug.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>All Stocks WebSocket Debug</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        
+        #connection-info {
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+        
+        #status {
+            font-weight: bold;
+        }
+        
+        .controls {
+            margin-bottom: 20px;
+        }
+        
+        button {
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        
+        button:hover {
+            background-color: #45a049;
+        }
+        
+        #log {
+            height: 200px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        
+        .message {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+        
+        #stocks-container {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #stocks-filter {
+            margin-bottom: 10px;
+        }
+        
+        table {
+            border-collapse: collapse;
+            width: 100%;
+        }
+        
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        
+        th, td {
+            padding: 8px;
+            text-align: left;
+        }
+        
+        th {
+            background-color: #f2f2f2;
+            position: sticky;
+            top: 0;
+        }
+        
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        .positive { color: green; }
+        .negative { color: red; }
+        
+        #stats {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>All Stocks WebSocket Debug</h1>
+    
+    <div id="connection-info">
+        <p>Status: <span id="status">Disconnected</span></p>
+        <p>Last update: <span id="last-update">Never</span></p>
+        <p>Stocks count: <span id="stocks-count">0</span></p>
+    </div>
+    
+    <div class="controls">
+        <button id="connect">Connect</button>
+        <button id="disconnect">Disconnect</button>
+        <button id="clear-log">Clear Log</button>
+    </div>
+    
+    <h2>Connection Log</h2>
+    <div id="log"></div>
+    
+    <div id="stocks-container">
+        <div id="stocks-filter">
+            <input type="text" id="filter-input" placeholder="Filter by stock name or ID...">
+            <select id="sort-by">
+                <option value="name">Sort by Name</option>
+                <option value="pl">Sort by Last Price</option>
+                <option value="pchange">Sort by Price Change</option>
+                <option value="tval">Sort by Trade Value</option>
+            </select>
+        </div>
+        
+        <div id="stocks-table-container" style="max-height: 500px; overflow-y: auto;">
+            <table id="stocks-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Full Name</th>
+                        <th>Opening (pf)</th>
+                        <th>Last (pl)</th>
+                        <th>Closing (pc)</th>
+                        <th>Yesterday (py)</th>
+                        <th>Min (pmin)</th>
+                        <th>Max (pmax)</th>
+                        <th>Change</th>
+                        <th>Trade Value</th>
+                        <th>Industry</th>
+                        <th>Exchange</th>
+                    </tr>
+                </thead>
+                <tbody id="stocks-body">
+                    <!-- Stock data will be inserted here -->
+                </tbody>
+            </table>
+        </div>
+        
+        <div id="stats">
+            <p>Displayed stocks: <span id="displayed-count">0</span></p>
+        </div>
+    </div>
+    
+    <script>
+        let socket = null;
+        let stocksData = {};
+        
+        function logMessage(message, type = 'info') {
+            const log = document.getElementById('log');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${type}`;
+            msgDiv.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            log.appendChild(msgDiv);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function updateStatus(status) {
+            document.getElementById('status').textContent = status;
+        }
+        
+        function updateLastUpdate(timestamp) {
+            document.getElementById('last-update').textContent = new Date(timestamp).toLocaleString();
+        }
+        
+        function updateStocksCount(count) {
+            document.getElementById('stocks-count').textContent = count;
+        }
+        
+        function formatPrice(price) {
+            if (price === null || price === undefined) return '-';
+            return price.toLocaleString();
+        }
+        
+        function formatChange(change, basePrice) {
+            if (change === null || change === undefined || basePrice === null || basePrice === 0) return '-';
+            const percent = (change / basePrice * 100).toFixed(2);
+            const formattedChange = change.toLocaleString();
+            const cssClass = change >= 0 ? 'positive' : 'negative';
+            const sign = change >= 0 ? '+' : '';
+            return `<span class="${cssClass}">${sign}${formattedChange} (${sign}${percent}%)</span>`;
+        }
+        
+        function updateStocksTable() {
+            const filterValue = document.getElementById('filter-input').value.toLowerCase();
+            const sortBy = document.getElementById('sort-by').value;
+            const tableBody = document.getElementById('stocks-body');
+            
+            // Clear the table
+            tableBody.innerHTML = '';
+            
+            // Sort and filter the stocks
+            let stocksArray = Object.entries(stocksData)
+                .filter(([id, data]) => {
+                    const name = data.metadata?.name?.toLowerCase() || '';
+                    const fullName = data.metadata?.Full_name?.toLowerCase() || '';
+                    return id.includes(filterValue) || name.includes(filterValue) || fullName.includes(filterValue);
+                });
+            
+            // Apply sorting
+            stocksArray.sort((a, b) => {
+                const aData = a[1];
+                const bData = b[1];
+                
+                if (sortBy === 'name') {
+                    return (aData.metadata?.name || '').localeCompare(bData.metadata?.name || '');
+                } else if (sortBy === 'pl') {
+                    return (bData.pl || 0) - (aData.pl || 0); // Descending
+                } else if (sortBy === 'pchange') {
+                    return (bData.pchange || 0) - (aData.pchange || 0); // Descending
+                } else if (sortBy === 'tval') {
+                    return (bData.tval || 0) - (aData.tval || 0); // Descending
+                }
+                return 0;
+            });
+            
+            // Update the table
+            stocksArray.forEach(([id, data]) => {
+                const row = document.createElement('tr');
+                
+                row.innerHTML = `
+                    <td>${id}</td>
+                    <td>${data.metadata?.name || '-'}</td>
+                    <td>${data.metadata?.Full_name || '-'}</td>
+                    <td>${formatPrice(data.pf)}</td>
+                    <td>${formatPrice(data.pl)}</td>
+                    <td>${formatPrice(data.pc)}</td>
+                    <td>${formatPrice(data.py)}</td>
+                    <td>${formatPrice(data.pmin)}</td>
+                    <td>${formatPrice(data.pmax)}</td>
+                    <td>${formatChange(data.pchange, data.py)}</td>
+                    <td>${formatPrice(data.tval)}</td>
+                    <td>${data.metadata?.industry_name || '-'}</td>
+                    <td>${data.metadata?.exchange_name || '-'}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+            
+            // Update displayed count
+            document.getElementById('displayed-count').textContent = stocksArray.length;
+        }
+        
+        function connectWebSocket() {
+            if (socket) {
+                logMessage('Already connected, disconnecting first...', 'info');
+                socket.close();
+            }
+            
+            try {
+                // Use the absolute WebSocket URL
+                const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+                const wsUrl = protocol + window.location.host + '/ws/exchange/all-stocks/';
+                
+                logMessage(`Connecting to WebSocket at ${wsUrl}`, 'info');
+                socket = new WebSocket(wsUrl);
+                
+                socket.onopen = function(e) {
+                    updateStatus('Connected');
+                    logMessage('Connection established', 'success');
+                };
+                
+                socket.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        
+                        if (data.type === 'all_stocks_update') {
+                            updateLastUpdate(data.timestamp);
+                            updateStocksCount(data.count);
+                            
+                            // Update our data store
+                            stocksData = { ...stocksData, ...data.data };
+                            
+                            // Update the table
+                            updateStocksTable();
+                            
+                            logMessage(`Received update for ${data.count} stocks`, 'success');
+                        } else if (data.type === 'connection_status') {
+                            logMessage(`Server says: ${data.message}`, 'info');
+                        } else if (data.type === 'error') {
+                            logMessage(`Error: ${data.message}`, 'error');
+                        } else {
+                            logMessage(`Received ${data.type} message`, 'info');
+                        }
+                    } catch (e) {
+                        logMessage(`Error parsing message: ${e.message}`, 'error');
+                        console.error(e);
+                    }
+                };
+                
+                socket.onclose = function(event) {
+                    if (event.wasClean) {
+                        updateStatus('Disconnected');
+                        logMessage(`Connection closed cleanly, code=${event.code} reason=${event.reason}`, 'info');
+                    } else {
+                        updateStatus('Connection Lost');
+                        logMessage('Connection died', 'error');
+                    }
+                    socket = null;
+                };
+                
+                socket.onerror = function(error) {
+                    updateStatus('Error');
+                    logMessage(`WebSocket Error`, 'error');
+                    console.error('WebSocket Error:', error);
+                };
+            } catch (e) {
+                updateStatus('Connection Failed');
+                logMessage(`Failed to connect: ${e.message}`, 'error');
+                console.error(e);
+                socket = null;
+            }
+        }
+        
+        // Event listeners
+        document.getElementById('connect').addEventListener('click', connectWebSocket);
+        
+        document.getElementById('disconnect').addEventListener('click', function() {
+            if (socket) {
+                socket.close();
+                socket = null;
+            } else {
+                logMessage('Not connected', 'info');
+            }
+        });
+        
+        document.getElementById('clear-log').addEventListener('click', function() {
+            document.getElementById('log').innerHTML = '';
+            logMessage('Log cleared', 'info');
+        });
+        
+        document.getElementById('filter-input').addEventListener('input', updateStocksTable);
+        document.getElementById('sort-by').addEventListener('change', updateStocksTable);
+        
+        // Auto-connect on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            logMessage('Page loaded, click Connect to begin', 'info');
+        });
+    </script>
+</body>
+</html>

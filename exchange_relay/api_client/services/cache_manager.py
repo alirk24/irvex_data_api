@@ -18,7 +18,8 @@ class ExchangeDataCache:
         # Set up locks for thread safety
         self._lock = asyncio.Lock()
         logger.info("Exchange data cache initialized")
-        
+    
+   
     async def initialize_stock(self, stock_id):
         """Initialize data structure for a new stock if it doesn't exist"""
         async with self._lock:
@@ -240,6 +241,35 @@ class ExchangeDataCache:
         """Get all cached data"""
         async with self._lock:
             return self.data
+
+
+    async def get_all_stocks_summary(self):
+        """Get a summary of all stocks with the most recent values"""
+        async with self._lock:
+            summary = {}
+            
+            for stock_id, stock_data in self.data.items():
+                # Only include stocks that have actual data
+                if stock_data and stock_data.get('time') and stock_data['time']:
+                    # Calculate price change
+                    last_price = stock_data['pl'][-1] if stock_data.get('pl') and stock_data['pl'] else 0
+                    yesterday_price = stock_data['py'][-1] if stock_data.get('py') and stock_data['py'] else 0
+                    price_change = last_price - yesterday_price if yesterday_price > 0 else 0
+                    
+                    # Create a summary with just the most recent values
+                    summary[stock_id] = {
+                        'pf': stock_data['pf'][-1] if stock_data.get('pf') and stock_data['pf'] else None,
+                        'pl': last_price,
+                        'pc': stock_data['pc'][-1] if stock_data.get('pc') and stock_data['pc'] else None,
+                        'tval': stock_data['tval'][-1] if stock_data.get('tval') and stock_data['tval'] else None,
+                        'py': yesterday_price,
+                        'pchange': price_change,
+                        'pmin': stock_data['pmin'][-1] if stock_data.get('pmin') and stock_data['pmin'] else None,
+                        'pmax': stock_data['pmax'][-1] if stock_data.get('pmax') and stock_data['pmax'] else None,
+                        'metadata': stock_data.get('metadata', self.metadata.get(stock_id, {}))
+                    }
+                    
+            return summary 
 
 def get_cache():
     """Get the singleton cache instance"""

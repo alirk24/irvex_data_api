@@ -142,3 +142,19 @@ class StockMetadataView(APIView):
             # Get metadata for all stocks
             all_metadata = loop.run_until_complete(cache_instance.get_all_metadata())
             return Response(all_metadata)
+        
+# api_client/views.py - Add this view
+
+class AllStocksSummaryView(APIView):
+    """API view to get a summary of all stocks"""
+    
+    def get(self, request):
+        # Get the cache instance
+        cache_instance = apps.get_app_config('api_client').cache_instance
+        
+        # Use the event loop to run the async function
+        loop = asyncio.get_event_loop()
+        
+        # Get summary data for all stocks
+        summary = loop.run_until_complete(cache_instance.get_all_stocks_summary())
+        return Response(summary)

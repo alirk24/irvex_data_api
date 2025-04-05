@@ -6,3 +6,7 @@ class WebSocketTestView(TemplateView):
 
 class WebSocketDebugView(TemplateView):
     template_name = 'socket_api/debug.html'
+    
+
+class AllStocksDebugView(TemplateView):
+    template_name = 'socket_api/all_stocks_debug.html'

@@ -1,7 +1,7 @@
 # exchange_relay/urls.py
 from django.contrib import admin
 from django.urls import path, include
-from .views import DiagnosticView,DebugApiView,StockDataView,StockMetadataView
+from .views import DiagnosticView,DebugApiView,StockDataView,StockMetadataView,AllStocksSummaryView
 
 urlpatterns = [
     path('stocks/', StockDataView.as_view(), name='all-stocks'),
@@ -10,4 +10,5 @@ urlpatterns = [
     path('metadata/<str:stock_id>/', StockMetadataView.as_view(), name='stock-metadata'),
     path('diagnostic/', DiagnosticView.as_view(), name='diagnostic'),
     path('debug/trigger-fetch/', DebugApiView.as_view(), name='debug-api'),
+    path('stocks/summary/', AllStocksSummaryView.as_view(), name='all-stocks-summary'),
     ]
