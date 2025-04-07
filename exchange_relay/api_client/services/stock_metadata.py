@@ -141,13 +141,13 @@ class StockMetadataClient:
                 detail = self.get_stock_detail(stock_id)
                 if detail:
                     # Try different field names that might be in the API response
-                    pe_value = detail.get('pe', '-')
+                    pe_value = detail.get('pe', None)
                     if pe_value == "nan" or pe_value == "inf" or pe_value == "-inf":
-                        pe_value = '-'
+                        pe_value = None
                         
-                    tmax_value = detail.get('tmaxp', detail.get('tmax', '-'))
-                    tmin_value = detail.get('tminp', detail.get('tmin', '-'))
-                    nav_value = detail.get('nav', '-')
+                    tmax_value = detail.get('tmaxp', detail.get('tmax', None))
+                    tmin_value = detail.get('tminp', detail.get('tmin', None))
+                    nav_value = detail.get('nav', None)
                     
                     stock_info.update({
                         'pe': pe_value,
@@ -157,10 +157,10 @@ class StockMetadataClient:
                     })
                 else:
                     stock_info.update({
-                        'pe': '-',
-                        'tmax': '-',
-                        'tmin': '-',
-                        'nav': '-'
+                        'pe': None,
+                        'tmax': None,
+                        'tmin': None,
+                        'nav': None
                     })
                 
                 simplified[stock_id] = stock_info
