@@ -4,8 +4,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, time
-from zoneinfo import ZoneInfo
-# No need to import pytz as we're using zoneinfo instead
+import pytz
 from typing import Dict, Any, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -18,7 +17,7 @@ class StockMetadataClient:
         self.metadata = {}
         self.detail_data = {}
         self.update_interval = timedelta(days=1)  # Update once per day
-        self.iran_timezone = ZoneInfo('Asia/Tehran')
+        self.iran_timezone = pytz.timezone('Asia/Tehran')
         
     async def should_update(self, force=False):
         """Determine if we should update the metadata based on time"""
@@ -30,13 +29,14 @@ class StockMetadataClient:
             return True
             
         # Get current time in Iran timezone
-        iran_now = datetime.now(self.iran_timezone)
+        now = datetime.now()
+        iran_now = now.astimezone(self.iran_timezone) if now.tzinfo else self.iran_timezone.localize(now)
         
         # Define target update time (8 AM Iran time)
         update_time = time(8, 0, 0)
         
         # Check if it's past 8 AM today and we haven't updated today
-        last_update_iran = self.last_update.astimezone(self.iran_timezone)
+        last_update_iran = self.last_update.astimezone(self.iran_timezone) if self.last_update.tzinfo else self.iran_timezone.localize(self.last_update)
         should_update = (
             iran_now.time() >= update_time and 
             (last_update_iran.date() < iran_now.date() or 
@@ -67,7 +67,11 @@ class StockMetadataClient:
                         self.metadata = metadata_list[0]
                         # Also fetch the details data with PE, tmax, tmin, NAV
                         await self.fetch_stock_details()
-                        self.last_update = datetime.now(self.iran_timezone)
+                        
+                        # Update last_update time with Iran timezone
+                        now = datetime.now()
+                        self.last_update = now.astimezone(self.iran_timezone) if now.tzinfo else self.iran_timezone.localize(now)
+                        
                         logger.info("Successfully fetched metadata for %d stocks", len(self.metadata))
                         return self.metadata
                     else:
