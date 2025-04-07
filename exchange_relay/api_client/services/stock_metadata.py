@@ -168,6 +168,7 @@ class StockMetadataClient:
         logger.info(f"Created simplified metadata with {len(simplified)} valid stocks")
         return simplified
         
+    
     def get_stock_metadata(self, stock_id: str) -> Dict[str, Any]:
         """Get metadata for a specific stock, including PE, tmax, tmin, NAV"""
         result = {}
@@ -187,11 +188,22 @@ class StockMetadataClient:
             # Add the additional details if available
             detail = self.get_stock_detail(stock_id)
             if detail:
+                pe_value = detail.get('pe', None)
+                if pe_value == "nan" or pe_value == "inf" or pe_value == "-inf":
+                    pe_value = None
+                    
                 result.update({
-                    'pe': detail.get('pe', None),
+                    'pe': pe_value,
                     'tmax': detail.get('tmaxp', None),
                     'tmin': detail.get('tminp', None),
                     'nav': detail.get('nav', None)
+                })
+            else:
+                result.update({
+                    'pe': None,
+                    'tmax': None,
+                    'tmin': None,
+                    'nav': None
                 })
         
         return result

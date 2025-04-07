@@ -136,10 +136,15 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
                                 metadata = enhanced_data.get('metadata', {})
                                 
                                 # Explicitly add them at the top level too for easy access
-                                enhanced_data['pe'] = metadata.get('pe', '-')
-                                enhanced_data['tmax'] = metadata.get('tmax', '-')
-                                enhanced_data['tmin'] = metadata.get('tmin', '-')
-                                enhanced_data['nav'] = metadata.get('nav', '-')
+                                # enhanced_data['pe'] = metadata.get('pe', '-')
+                                # enhanced_data['tmax'] = metadata.get('tmax', '-')
+                                # enhanced_data['tmin'] = metadata.get('tmin', '-')
+                                # enhanced_data['nav'] = metadata.get('nav', '-')
+                                enhanced_data['pe'] = metadata.get('pe')
+                                enhanced_data['tmax'] = metadata.get('tmax')
+                                enhanced_data['tmin'] = metadata.get('tmin')
+                                enhanced_data['nav'] = metadata.get('nav')
+
                             except Exception as e:
                                 logger.error(f"Error processing stock {stock_id}: {e}")
                                 # Continue with basic data if there's an error
