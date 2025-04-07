@@ -71,7 +71,7 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
                     await asyncio.sleep(5)  # Wait longer for initial data
                     continue
                 
-                # Enhance the stock updates with additional data from cache
+                # Enhance the stock updates with additional data
                 enhanced_updates = {}
                 for stock_id, stock_data in stock_updates.items():
                     # Get the complete stock data to access additional fields
@@ -93,6 +93,16 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
                             enhanced_data['qo1'] = full_stock_data['qo1'][-1] if len(full_stock_data['qo1']) > 0 else None
                         if full_stock_data.get('po1') and full_stock_data['po1']:
                             enhanced_data['po1'] = full_stock_data['po1'][-1] if len(full_stock_data['po1']) > 0 else None
+                    
+                    # Make sure the metadata includes all the new fields (pe, tmax, tmin, nav)
+                    # These fields should be in the metadata, but let's make sure they are
+                    metadata = enhanced_data.get('metadata', {})
+                    
+                    # Explicitly add them at the top level too for easy access
+                    enhanced_data['pe'] = metadata.get('pe', '-')
+                    enhanced_data['tmax'] = metadata.get('tmax', '-')
+                    enhanced_data['tmin'] = metadata.get('tmin', '-')
+                    enhanced_data['nav'] = metadata.get('nav', '-')
                     
                     # Store the enhanced data
                     enhanced_updates[stock_id] = enhanced_data

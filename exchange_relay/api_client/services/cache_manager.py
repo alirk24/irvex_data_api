@@ -85,7 +85,6 @@ class ExchangeDataCache:
         }
         
         return stock_data
-    
     async def update_metadata(self, metadata):
         """Update the metadata for all stocks"""
         async with self._lock:
@@ -94,6 +93,7 @@ class ExchangeDataCache:
             # Also update metadata for existing stocks in the cache
             for stock_id, stock_meta in metadata.items():
                 if stock_id in self.data:
+                    # Make sure all metadata fields including pe, tmax, tmin, nav are included
                     self.data[stock_id]['metadata'] = {
                         'name': stock_meta.get('name', ''),
                         'Full_name': stock_meta.get('Full_name', ''),
@@ -102,9 +102,13 @@ class ExchangeDataCache:
                         'Exchange': stock_meta.get('Exchange', ''),
                         'valid': stock_meta.get('valid', ''),
                         'exchange_name': stock_meta.get('exchange_name', ''),
-                        'industry_name': stock_meta.get('industry_name', '')
+                        'industry_name': stock_meta.get('industry_name', ''),
+                        # Add the new fields
+                        'pe': stock_meta.get('pe', '-'),
+                        'tmax': stock_meta.get('tmax', '-'),
+                        'tmin': stock_meta.get('tmin', '-'),
+                        'nav': stock_meta.get('nav', '-')
                     }
-    
     async def get_all_metadata(self):
         """Get metadata for all stocks"""
         async with self._lock:

@@ -135,7 +135,7 @@ class IranExchangeClient:
             
             # First, get the metadata client and ensure it's updated
             metadata_client = get_metadata_client()
-            await metadata_client.fetch_metadata()
+            await metadata_client.fetch_metadata() # This will fetch metadata AND details with pe, tmax, tmin, nav
             
             # Get the list of valid stock IDs to filter data
             valid_stock_ids = metadata_client.get_stock_ids()
@@ -189,7 +189,7 @@ class IranExchangeClient:
             
             print(f"Successfully fetched data: {len(filtered_client_type)} client types, {len(filtered_trade_data)} trades, {len(filtered_limits_data)} limits (after filtering)")
             
-            # Get simplified metadata
+            # Get the complete metadata with all fields including pe, tmax, tmin, nav
             stock_metadata = metadata_client.get_simplified_metadata()
             
             return {
@@ -197,6 +197,17 @@ class IranExchangeClient:
                 'trade_data': filtered_trade_data,
                 'limits_data': filtered_limits_data,
                 'metadata': stock_metadata
+            }
+            
+        except Exception as e:
+            print(f"Error fetching data: {type(e).__name__}: {str(e)}")
+            traceback.print_exc()
+            # Return an empty result rather than raising an exception
+            return {
+                'client_type': {},
+                'trade_data': {},
+                'limits_data': {},
+                'metadata': {}
             }
             
         except Exception as e:

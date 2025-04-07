@@ -123,6 +123,8 @@ class StockMetadataClient:
     def get_simplified_metadata(self) -> Dict[str, Dict[str, Any]]:
         """Get simplified metadata with only the needed fields, including PE, tmax, tmin, NAV"""
         simplified = {}
+        logger.info(f"Creating simplified metadata with {len(self.metadata)} stocks and {len(self.detail_data)} detail records")
+        
         for stock_id, data in self.metadata.items():
             if data.get('valid') == '1':  # Only include valid stocks
                 stock_info = {
@@ -138,11 +140,20 @@ class StockMetadataClient:
                 # Add the additional details if available
                 detail = self.get_stock_detail(stock_id)
                 if detail:
+                    # Try different field names that might be in the API response
+                    pe_value = detail.get('pe', '-')
+                    if pe_value == "nan" or pe_value == "inf" or pe_value == "-inf":
+                        pe_value = '-'
+                        
+                    tmax_value = detail.get('tmaxp', detail.get('tmax', '-'))
+                    tmin_value = detail.get('tminp', detail.get('tmin', '-'))
+                    nav_value = detail.get('nav', '-')
+                    
                     stock_info.update({
-                        'pe': detail.get('pe', '-'),
-                        'tmax': detail.get('tmaxp', '-'),
-                        'tmin': detail.get('tminp', '-'),
-                        'nav': detail.get('nav', '-')
+                        'pe': pe_value,
+                        'tmax': tmax_value,
+                        'tmin': tmin_value, 
+                        'nav': nav_value
                     })
                 else:
                     stock_info.update({
@@ -154,8 +165,9 @@ class StockMetadataClient:
                 
                 simplified[stock_id] = stock_info
                 
+        logger.info(f"Created simplified metadata with {len(simplified)} valid stocks")
         return simplified
-    
+        
     def get_stock_metadata(self, stock_id: str) -> Dict[str, Any]:
         """Get metadata for a specific stock, including PE, tmax, tmin, NAV"""
         result = {}
