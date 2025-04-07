@@ -188,10 +188,10 @@ class StockMetadataClient:
             detail = self.get_stock_detail(stock_id)
             if detail:
                 result.update({
-                    'pe': detail.get('pe', '-'),
-                    'tmax': detail.get('tmaxp', '-'),
-                    'tmin': detail.get('tminp', '-'),
-                    'nav': detail.get('nav', '-')
+                    'pe': detail.get('pe', None),
+                    'tmax': detail.get('tmaxp', None),
+                    'tmin': detail.get('tminp', None),
+                    'nav': detail.get('nav', None)
                 })
         
         return result
