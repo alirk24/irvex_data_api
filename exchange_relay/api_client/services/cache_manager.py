@@ -245,8 +245,6 @@ class ExchangeDataCache:
         """Get all cached data"""
         async with self._lock:
             return self.data
-
-
     async def get_all_stocks_summary(self):
         """Get a summary of all stocks with the most recent values"""
         async with self._lock:
@@ -273,6 +271,9 @@ class ExchangeDataCache:
                         'pchange': price_change,
                         'pmin': stock_data['pmin'][-1] if stock_data.get('pmin') and stock_data['pmin'] else None,
                         'pmax': stock_data['pmax'][-1] if stock_data.get('pmax') and stock_data['pmax'] else None,
+                        
+                        # Add volume data
+                        'tvol': stock_data['tvol'][-1] if stock_data.get('tvol') and stock_data['tvol'] else None,
                         
                         # Add the order book data
                         'qd1': stock_data['qd1'][-1] if stock_data.get('qd1') and stock_data['qd1'] else None,

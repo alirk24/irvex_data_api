@@ -10,6 +10,9 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 # socket_api/consumers.py - Add this new consumer class
+# 
+# 
+
 class AllStocksDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -35,6 +38,12 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
         # Cancel the update task if it's running
         if self.update_task:
             self.update_task.cancel()
+            try:
+                await self.update_task
+            except asyncio.CancelledError:
+                logger.info("Update task cancelled successfully")
+            except Exception as e:
+                logger.error(f"Error cancelling update task: {e}")
             
     async def receive(self, text_data):
         """Handle incoming messages, but since this is a broadcast channel, we just acknowledge"""
@@ -62,69 +71,120 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
     async def send_all_stocks_updates(self):
         """Background task to send updates for all stocks to the client"""
         try:
+            # Make sure we're using the same event loop as the consumer
+            loop = asyncio.get_event_loop()
+            
             while True:
-                # Get optimized summary data for all stocks
-                stock_updates = await self.cache_instance.get_all_stocks_summary()
-                
-                if not stock_updates:
-                    logger.info("No data in cache yet, waiting for initial data load...")
-                    await asyncio.sleep(5)  # Wait longer for initial data
-                    continue
-                
-                # Enhance the stock updates with additional data
-                enhanced_updates = {}
-                for stock_id, stock_data in stock_updates.items():
-                    # Get the complete stock data to access additional fields
-                    full_stock_data = await self.cache_instance.get_stock_data(stock_id)
+                try:
+                    # Get optimized summary data for all stocks
+                    # Use the same event loop for all async operations
+                    stock_updates = await self.cache_instance.get_all_stocks_summary()
                     
-                    # Start with the basic data
-                    enhanced_data = stock_data.copy()
+                    if not stock_updates:
+                        logger.info("No data in cache yet, waiting for initial data load...")
+                        await asyncio.sleep(5)  # Wait longer for initial data
+                        continue
                     
-                    # Add order book data (best bid/ask)
-                    if full_stock_data:
-                        # Add best bid (demand)
-                        if full_stock_data.get('qd1') and full_stock_data['qd1']:
-                            enhanced_data['qd1'] = full_stock_data['qd1'][-1] if len(full_stock_data['qd1']) > 0 else None
-                        if full_stock_data.get('pd1') and full_stock_data['pd1']:
-                            enhanced_data['pd1'] = full_stock_data['pd1'][-1] if len(full_stock_data['pd1']) > 0 else None
+                    # Process stocks in smaller batches to avoid timeout issues
+                    batch_size = 100
+                    stock_ids = list(stock_updates.keys())
+                    enhanced_updates = {}
+                    
+                    # Process stocks in batches
+                    for i in range(0, len(stock_ids), batch_size):
+                        batch_ids = stock_ids[i:i+batch_size]
+                        
+                        for stock_id in batch_ids:
+                            stock_data = stock_updates[stock_id]
+                            # Skip processing if the connection is closed
+                            if not self.is_connected:
+                                return
+                                
+                            # Start with the basic data
+                            enhanced_data = stock_data.copy()
                             
-                        # Add best ask (offer)
-                        if full_stock_data.get('qo1') and full_stock_data['qo1']:
-                            enhanced_data['qo1'] = full_stock_data['qo1'][-1] if len(full_stock_data['qo1']) > 0 else None
-                        if full_stock_data.get('po1') and full_stock_data['po1']:
-                            enhanced_data['po1'] = full_stock_data['po1'][-1] if len(full_stock_data['po1']) > 0 else None
+                            try:
+                                # Get the complete stock data to access additional fields
+                                full_stock_data = await self.cache_instance.get_stock_data(stock_id)
+                                
+                                # Add order book data (best bid/ask)
+                                if full_stock_data:
+                                    # Add best bid (demand)
+                                    if full_stock_data.get('qd1') and full_stock_data['qd1']:
+                                        enhanced_data['qd1'] = full_stock_data['qd1'][-1] if len(full_stock_data['qd1']) > 0 else None
+                                    if full_stock_data.get('pd1') and full_stock_data['pd1']:
+                                        enhanced_data['pd1'] = full_stock_data['pd1'][-1] if len(full_stock_data['pd1']) > 0 else None
+                                        
+                                    # Add best ask (offer)
+                                    if full_stock_data.get('qo1') and full_stock_data['qo1']:
+                                        enhanced_data['qo1'] = full_stock_data['qo1'][-1] if len(full_stock_data['qo1']) > 0 else None
+                                    if full_stock_data.get('po1') and full_stock_data['po1']:
+                                        enhanced_data['po1'] = full_stock_data['po1'][-1] if len(full_stock_data['po1']) > 0 else None
+                                    
+                                    # Add volume and trade volume data
+                                    if full_stock_data.get('tvol') and full_stock_data['tvol']:
+                                        enhanced_data['tvol'] = full_stock_data['tvol'][-1] if len(full_stock_data['tvol']) > 0 else None
+                                        
+                                    # Some APIs use 'vol' instead of 'tvol', check for both
+                                    if full_stock_data.get('vol') and full_stock_data['vol']:
+                                        enhanced_data['vol'] = full_stock_data['vol'][-1] if len(full_stock_data['vol']) > 0 else None
+                                    # If 'vol' isn't explicitly available, use tvol as a fallback for vol
+                                    elif 'tvol' in enhanced_data and enhanced_data['tvol'] is not None:
+                                        enhanced_data['vol'] = enhanced_data['tvol']
+                                
+                                # Make sure the metadata includes all the new fields
+                                metadata = enhanced_data.get('metadata', {})
+                                
+                                # Explicitly add them at the top level too for easy access
+                                enhanced_data['pe'] = metadata.get('pe', '-')
+                                enhanced_data['tmax'] = metadata.get('tmax', '-')
+                                enhanced_data['tmin'] = metadata.get('tmin', '-')
+                                enhanced_data['nav'] = metadata.get('nav', '-')
+                            except Exception as e:
+                                logger.error(f"Error processing stock {stock_id}: {e}")
+                                # Continue with basic data if there's an error
+                            
+                            # Store the enhanced data
+                            enhanced_updates[stock_id] = enhanced_data
+                            
+                        # Add a small delay between batches to avoid blocking the event loop
+                        await asyncio.sleep(0.01)
                     
-                    # Make sure the metadata includes all the new fields (pe, tmax, tmin, nav)
-                    # These fields should be in the metadata, but let's make sure they are
-                    metadata = enhanced_data.get('metadata', {})
+                    # Only send if we have updates and we're still connected
+                    if enhanced_updates and self.is_connected:
+                        logger.info(f"Sending updates for {len(enhanced_updates)} stocks on AllStocksData channel")
+                        
+                        try:
+                            await self.send(text_data=json.dumps({
+                                'type': 'all_stocks_update',
+                                'timestamp': datetime.now().isoformat(),
+                                'count': len(enhanced_updates),
+                                'data': enhanced_updates
+                            }))
+                        except Exception as send_error:
+                            logger.error(f"Error sending updates: {send_error}")
+                            # If we fail to send, the connection might be closed
+                            if not self.is_connected:
+                                return
+                    elif self.is_connected:
+                        logger.info("No updates to send on AllStocksData channel")
+                    else:
+                        return  # Exit if we're no longer connected
                     
-                    # Explicitly add them at the top level too for easy access
-                    enhanced_data['pe'] = metadata.get('pe', '-')
-                    enhanced_data['tmax'] = metadata.get('tmax', '-')
-                    enhanced_data['tmin'] = metadata.get('tmin', '-')
-                    enhanced_data['nav'] = metadata.get('nav', '-')
+                    # Wait before sending the next update (5 seconds)
+                    await asyncio.sleep(5)
                     
-                    # Store the enhanced data
-                    enhanced_updates[stock_id] = enhanced_data
-                
-                # Only send if we have updates
-                if enhanced_updates:
-                    logger.info(f"Sending updates for {len(enhanced_updates)} stocks on AllStocksData channel")
-                    await self.send(text_data=json.dumps({
-                        'type': 'all_stocks_update',
-                        'timestamp': datetime.now().isoformat(),
-                        'count': len(enhanced_updates),
-                        'data': enhanced_updates
-                    }))
-                else:
-                    logger.info("No updates to send on AllStocksData channel")
-                
-                # Wait before sending the next update (5 seconds)
-                await asyncio.sleep(5)
+                except Exception as loop_error:
+                    logger.error(f"Error in update loop: {loop_error}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    # Continue running even after an error, with a small delay
+                    await asyncio.sleep(5)
                 
         except asyncio.CancelledError:
             # Task was cancelled, clean up
             logger.info("AllStocksData update task cancelled")
+            raise  # Re-raise to properly handle cancellation
             
         except Exception as e:
             # Log any errors
@@ -132,14 +192,22 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
             import traceback
             logger.error(traceback.format_exc())
             
-            # Try to notify the client
-            try:
-                await self.send(text_data=json.dumps({
-                    'type': 'error',
-                    'message': f'Update service encountered an error: {str(e)}'
-                }))
-            except:
-                pass
+            # Try to notify the client if we're still connected
+            if self.is_connected:
+                try:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': f'Update service encountered an error: {str(e)}'
+                    }))
+                except:
+                    pass
+    
+    @property
+    def is_connected(self):
+        """Check if the WebSocket is still connected"""
+        return hasattr(self, 'scope') and self.scope is not None and 'client' in self.scope
+
+
 class ExchangeDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
