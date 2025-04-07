@@ -143,6 +143,14 @@
                         <th>Max (pmax)</th>
                         <th>Change</th>
                         <th>Trade Value</th>
+                        <th>Best Bid Q</th>
+                        <th>Best Bid P</th>
+                        <th>Best Ask Q</th>
+                        <th>Best Ask P</th>
+                        <th>P/E</th>
+                        <th>tmax</th>
+                        <th>tmin</th>
+                        <th>NAV</th>
                         <th>Industry</th>
                         <th>Exchange</th>
                     </tr>
@@ -246,6 +254,14 @@
                     <td>${formatPrice(data.pmax)}</td>
                     <td>${formatChange(data.pchange, data.py)}</td>
                     <td>${formatPrice(data.tval)}</td>
+                    <td>${formatPrice(data.qd1)}</td>
+                    <td>${formatPrice(data.pd1)}</td>
+                    <td>${formatPrice(data.qo1)}</td>
+                    <td>${formatPrice(data.po1)}</td>
+                    <td>${data.metadata?.pe || '-'}</td>
+                    <td>${data.metadata?.tmax || '-'}</td>
+                    <td>${data.metadata?.tmin || '-'}</td>
+                    <td>${data.metadata?.nav || '-'}</td>
                     <td>${data.metadata?.industry_name || '-'}</td>
                     <td>${data.metadata?.exchange_name || '-'}</td>
                 `;

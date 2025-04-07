@@ -10,7 +10,6 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 # socket_api/consumers.py - Add this new consumer class
-
 class AllStocksDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -72,14 +71,40 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
                     await asyncio.sleep(5)  # Wait longer for initial data
                     continue
                 
+                # Enhance the stock updates with additional data from cache
+                enhanced_updates = {}
+                for stock_id, stock_data in stock_updates.items():
+                    # Get the complete stock data to access additional fields
+                    full_stock_data = await self.cache_instance.get_stock_data(stock_id)
+                    
+                    # Start with the basic data
+                    enhanced_data = stock_data.copy()
+                    
+                    # Add order book data (best bid/ask)
+                    if full_stock_data:
+                        # Add best bid (demand)
+                        if full_stock_data.get('qd1') and full_stock_data['qd1']:
+                            enhanced_data['qd1'] = full_stock_data['qd1'][-1] if len(full_stock_data['qd1']) > 0 else None
+                        if full_stock_data.get('pd1') and full_stock_data['pd1']:
+                            enhanced_data['pd1'] = full_stock_data['pd1'][-1] if len(full_stock_data['pd1']) > 0 else None
+                            
+                        # Add best ask (offer)
+                        if full_stock_data.get('qo1') and full_stock_data['qo1']:
+                            enhanced_data['qo1'] = full_stock_data['qo1'][-1] if len(full_stock_data['qo1']) > 0 else None
+                        if full_stock_data.get('po1') and full_stock_data['po1']:
+                            enhanced_data['po1'] = full_stock_data['po1'][-1] if len(full_stock_data['po1']) > 0 else None
+                    
+                    # Store the enhanced data
+                    enhanced_updates[stock_id] = enhanced_data
+                
                 # Only send if we have updates
-                if stock_updates:
-                    logger.info(f"Sending updates for {len(stock_updates)} stocks on AllStocksData channel")
+                if enhanced_updates:
+                    logger.info(f"Sending updates for {len(enhanced_updates)} stocks on AllStocksData channel")
                     await self.send(text_data=json.dumps({
                         'type': 'all_stocks_update',
                         'timestamp': datetime.now().isoformat(),
-                        'count': len(stock_updates),
-                        'data': stock_updates
+                        'count': len(enhanced_updates),
+                        'data': enhanced_updates
                     }))
                 else:
                     logger.info("No updates to send on AllStocksData channel")
@@ -105,7 +130,6 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
                 }))
             except:
                 pass
-
 class ExchangeDataConsumer(AsyncWebsocketConsumer):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

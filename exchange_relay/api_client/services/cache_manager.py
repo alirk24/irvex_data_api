@@ -256,6 +256,9 @@ class ExchangeDataCache:
                     yesterday_price = stock_data['py'][-1] if stock_data.get('py') and stock_data['py'] else 0
                     price_change = last_price - yesterday_price if yesterday_price > 0 else 0
                     
+                    # Get metadata including the new fields (pe, tmax, tmin, nav)
+                    metadata = stock_data.get('metadata', self.metadata.get(stock_id, {}))
+                    
                     # Create a summary with just the most recent values
                     summary[stock_id] = {
                         'pf': stock_data['pf'][-1] if stock_data.get('pf') and stock_data['pf'] else None,
@@ -266,11 +269,17 @@ class ExchangeDataCache:
                         'pchange': price_change,
                         'pmin': stock_data['pmin'][-1] if stock_data.get('pmin') and stock_data['pmin'] else None,
                         'pmax': stock_data['pmax'][-1] if stock_data.get('pmax') and stock_data['pmax'] else None,
-                        'metadata': stock_data.get('metadata', self.metadata.get(stock_id, {}))
+                        
+                        # Add the order book data
+                        'qd1': stock_data['qd1'][-1] if stock_data.get('qd1') and stock_data['qd1'] else None,
+                        'pd1': stock_data['pd1'][-1] if stock_data.get('pd1') and stock_data['pd1'] else None,
+                        'qo1': stock_data['qo1'][-1] if stock_data.get('qo1') and stock_data['qo1'] else None,
+                        'po1': stock_data['po1'][-1] if stock_data.get('po1') and stock_data['po1'] else None,
+                        
+                        'metadata': metadata
                     }
                     
-            return summary 
-
+            return summary
 def get_cache():
     """Get the singleton cache instance"""
     global _cache_instance
