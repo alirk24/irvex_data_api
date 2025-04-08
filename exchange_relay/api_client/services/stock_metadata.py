@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 class StockMetadataClient:
     def __init__(self):
-        self.metadata_url = "http://213.232.126.219:2624/dideban/livetseids/"
+        self.metadata_url = "http://213.232.126.219:2624/dideban/livetseactiveids/"
         self.details_url = "http://213.232.126.219:2624/dideban/silver/stk_details/"
         self.last_update = None
         self.metadata = {}
