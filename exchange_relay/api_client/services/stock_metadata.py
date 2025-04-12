@@ -132,6 +132,10 @@ class StockMetadataClient:
                     if isinstance(details_data, dict) and "time" in details_data:
                         # Remove the time field and store the rest
                         details_data.pop("time", None)
+                        
+                        for stock_id, stock_data in details_data.items():
+                            if 'nav' in stock_data and stock_data['nav'] == '-':
+                                stock_data['nav'] = None
                         self.detail_data = details_data
                         logger.info("Successfully fetched details for %d stocks", len(self.detail_data))
                     else:
