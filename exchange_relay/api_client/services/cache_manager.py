@@ -104,11 +104,15 @@ class ExchangeDataCache:
                         'exchange_name': stock_meta.get('exchange_name', ''),
                         'industry_name': stock_meta.get('industry_name', ''),
                         # Add the new fields
-                        'pe': stock_meta.get('pe', '-'),
-                        'tmax': stock_meta.get('tmax', '-'),
-                        'tmin': stock_meta.get('tmin', '-'),
-                        'nav': stock_meta.get('nav', '-')
+                        'pe': stock_meta.get('pe', None),  # Change to None
+                        'tmax': stock_meta.get('tmax', None),  # Change to None
+                        'tmin': stock_meta.get('tmin', None),  # Change to None
+                        'nav': stock_meta.get('nav', None),  # Change to None
+                        # Add the new fields
+                        'is_san': stock_meta.get('is_san', None),
+                        'gpe': stock_meta.get('gpe', None)
                     }
+                    
     async def get_all_metadata(self):
         """Get metadata for all stocks"""
         async with self._lock:

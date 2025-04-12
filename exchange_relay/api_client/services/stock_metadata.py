@@ -13,39 +13,71 @@ class StockMetadataClient:
     def __init__(self):
         self.metadata_url = "http://213.232.126.219:2624/dideban/livetseactiveids/"
         self.details_url = "http://213.232.126.219:2624/dideban/silver/stk_details/"
+        # Add the new static details URL
+        self.static_details_url = "http://213.232.126.219:2624/dideban/gold/stk_details_static/"
         self.last_update = None
         self.metadata = {}
         self.detail_data = {}
-        self.update_interval = timedelta(days=1)  # Update once per day
+        self.static_detail_data = {}  # Add this to store the static details
+        self.update_interval = timedelta(days=1)
         self.iran_timezone = pytz.timezone('Asia/Tehran')
-        
+    async def fetch_static_stock_details(self):
+        """Fetch additional static stock details including is_san and gpe"""
+        logger.info("Fetching static stock details from %s", self.static_details_url)
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(self.static_details_url, timeout=30.0)
+                
+                if response.status_code == 200:
+                    # Parse JSON response
+                    static_details_data = response.json()
+                    if isinstance(static_details_data, dict) and "time" in static_details_data:
+                        # Remove the time field and store the rest
+                        static_details_data.pop("time", None)
+                        self.static_detail_data = static_details_data
+                        logger.info("Successfully fetched static details for %d stocks", len(self.static_detail_data))
+                    else:
+                        logger.error("Invalid static details format received")
+                else:
+                    logger.error("Failed to fetch static stock details: HTTP %d", response.status_code)
+        except Exception as e:
+            logger.error("Error fetching static stock details: %s", str(e))
+            import traceback
+            logger.error(traceback.format_exc())
+
+    def get_static_stock_detail(self, stock_id: str) -> Optional[Dict[str, Any]]:
+        """Get additional static details for a specific stock"""
+        if stock_id in self.static_detail_data:
+            return self.static_detail_data[stock_id]
+        return None
+    
     async def should_update(self, force=False):
-        """Determine if we should update the metadata based on time"""
-        if force:
-            return True
+            """Determine if we should update the metadata based on time"""
+            if force:
+                return True
+                
+            # If we've never updated, we should update
+            if not self.last_update:
+                return True
+                
+            # Get current time in Iran timezone
+            now = datetime.now()
+            iran_now = now.astimezone(self.iran_timezone) if now.tzinfo else self.iran_timezone.localize(now)
             
-        # If we've never updated, we should update
-        if not self.last_update:
-            return True
+            # Define target update time (8 AM Iran time)
+            update_time = time(8, 0, 0)
             
-        # Get current time in Iran timezone
-        now = datetime.now()
-        iran_now = now.astimezone(self.iran_timezone) if now.tzinfo else self.iran_timezone.localize(now)
-        
-        # Define target update time (8 AM Iran time)
-        update_time = time(8, 0, 0)
-        
-        # Check if it's past 8 AM today and we haven't updated today
-        last_update_iran = self.last_update.astimezone(self.iran_timezone) if self.last_update.tzinfo else self.iran_timezone.localize(self.last_update)
-        should_update = (
-            iran_now.time() >= update_time and 
-            (last_update_iran.date() < iran_now.date() or 
-             (last_update_iran.date() == iran_now.date() and last_update_iran.time() < update_time))
-        )
-        
-        logger.info(f"Should update metadata: {should_update} (Current Iran time: {iran_now.strftime('%Y-%m-%d %H:%M:%S')})")
-        return should_update
-        
+            # Check if it's past 8 AM today and we haven't updated today
+            last_update_iran = self.last_update.astimezone(self.iran_timezone) if self.last_update.tzinfo else self.iran_timezone.localize(self.last_update)
+            should_update = (
+                iran_now.time() >= update_time and 
+                (last_update_iran.date() < iran_now.date() or 
+                (last_update_iran.date() == iran_now.date() and last_update_iran.time() < update_time))
+            )
+            
+            logger.info(f"Should update metadata: {should_update} (Current Iran time: {iran_now.strftime('%Y-%m-%d %H:%M:%S')})")
+            return should_update
+            
     async def fetch_metadata(self, force=False):
         """Fetch stock metadata from the API"""
         # Only fetch if we should update
@@ -67,7 +99,8 @@ class StockMetadataClient:
                         self.metadata = metadata_list[0]
                         # Also fetch the details data with PE, tmax, tmin, NAV
                         await self.fetch_stock_details()
-                        
+                        # Also fetch static details with is_san and gpe
+                        await self.fetch_static_stock_details()
                         # Update last_update time with Iran timezone
                         now = datetime.now()
                         self.last_update = now.astimezone(self.iran_timezone) if now.tzinfo else self.iran_timezone.localize(now)
@@ -164,6 +197,19 @@ class StockMetadataClient:
                         'nav': None
                     })
                 
+                # Add static details if available
+                static_detail = self.get_static_stock_detail(stock_id)
+                if static_detail:
+                    stock_info.update({
+                        'is_san': static_detail.get('is_san', None),
+                        'gpe': static_detail.get('gpe', None)
+                    })
+                else:
+                    stock_info.update({
+                        'is_san': None,
+                        'gpe': None
+                    })
+                
                 simplified[stock_id] = stock_info
                 
         logger.info(f"Created simplified metadata with {len(simplified)} valid stocks")
@@ -206,7 +252,18 @@ class StockMetadataClient:
                     'tmin': None,
                     'nav': None
                 })
-        
+            # Add static details if available
+            static_detail = self.get_static_stock_detail(stock_id)
+            if static_detail:
+                result.update({
+                    'is_san': static_detail.get('is_san', None),
+                    'gpe': static_detail.get('gpe', None)
+                })
+            else:
+                result.update({
+                    'is_san': None,
+                    'gpe': None
+                })
         return result
 
 # Global singleton instance

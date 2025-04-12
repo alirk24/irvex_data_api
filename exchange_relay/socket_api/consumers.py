@@ -145,7 +145,9 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
                                 enhanced_data['tmax'] = metadata.get('tmax', None)
                                 enhanced_data['tmin'] = metadata.get('tmin', None)
                                 enhanced_data['nav'] = metadata.get('nav', None)
-
+                                # Add the new fields
+                                enhanced_data['is_san'] = metadata.get('is_san', None)
+                                enhanced_data['gpe'] = metadata.get('gpe', None)
                             except Exception as e:
                                 logger.error(f"Error processing stock {stock_id}: {e}")
                                 # Continue with basic data if there's an error
