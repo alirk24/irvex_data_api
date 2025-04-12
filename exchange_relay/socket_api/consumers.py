@@ -140,10 +140,11 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
                                 # enhanced_data['tmax'] = metadata.get('tmax', '-')
                                 # enhanced_data['tmin'] = metadata.get('tmin', '-')
                                 # enhanced_data['nav'] = metadata.get('nav', '-')
-                                enhanced_data['pe'] = metadata.get('pe')
-                                enhanced_data['tmax'] = metadata.get('tmax')
-                                enhanced_data['tmin'] = metadata.get('tmin')
-                                enhanced_data['nav'] = metadata.get('nav')
+                                # CHANGED: Using null instead of "-" for missing values
+                                enhanced_data['pe'] = metadata.get('pe', None)
+                                enhanced_data['tmax'] = metadata.get('tmax', None)
+                                enhanced_data['tmin'] = metadata.get('tmin', None)
+                                enhanced_data['nav'] = metadata.get('nav', None)
 
                             except Exception as e:
                                 logger.error(f"Error processing stock {stock_id}: {e}")
@@ -340,7 +341,9 @@ class ExchangeDataConsumer(AsyncWebsocketConsumer):
                                     'last': stock_data['pl'][-1] if stock_data.get('pl') and stock_data['pl'] else None,
                                     'closing': stock_data['pc'][-1] if stock_data.get('pc') and stock_data['pc'] else None,
                                     'min': stock_data['pmin'][-1] if stock_data.get('pmin') and stock_data['pmin'] else None,
-                                    'max': stock_data['pmax'][-1] if stock_data.get('pmax') and stock_data['pmax'] else None
+                                    'max': stock_data['pmax'][-1] if stock_data.get('pmax') and stock_data['pmax'] else None,
+                                    'yesterday': stock_data['py'][-1] if stock_data.get('py') and stock_data['py'] else None,
+                                    'open': stock_data['pf'][-1] if stock_data.get('pf') and stock_data['pf'] else None
                                 },
                                 'volume': stock_data['tvol'][-1] if stock_data.get('tvol') and stock_data['tvol'] else None,
                                 'value': stock_data['tval'][-1] if stock_data.get('tval') and stock_data['tval'] else None,

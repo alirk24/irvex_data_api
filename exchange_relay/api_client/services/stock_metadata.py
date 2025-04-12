@@ -134,7 +134,8 @@ class StockMetadataClient:
                     'Exchange': data.get('Exchange', ''),
                     'valid': data.get('valid', ''),
                     'exchange_name': data.get('exchange_name', ''),
-                    'industry_name': data.get('industry_name', '')
+                    'industry_name': data.get('industry_name', ''),
+                    
                 }
                 
                 # Add the additional details if available
