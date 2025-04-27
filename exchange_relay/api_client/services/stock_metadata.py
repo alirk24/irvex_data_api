@@ -29,28 +29,28 @@ class StockMetadataClient:
         """Fetch the live IDs data which includes min_lot and max_lot"""
         logger.info("Fetching live IDs from %s", self.live_ids_url)
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 response = await client.get(self.live_ids_url, timeout=30.0)
                 
                 if response.status_code == 200:
                     # Parse JSON response
                     live_ids_data = response.json()
+                    
                     if isinstance(live_ids_data, list) and len(live_ids_data) > 0:
                         # The API returns a list with a single object where keys are stock IDs
                         self.live_ids_data = live_ids_data[0]
-                        logger.info("Successfully fetched live IDs for %d stocks", len(self.live_ids_data))
+                        logger.info(f"Successfully fetched live IDs for {len(self.live_ids_data)} stocks")
                         return self.live_ids_data
                     else:
-                        logger.error("Invalid live IDs format received")
+                        logger.error(f"Invalid live IDs format received: {type(live_ids_data)}")
                 else:
-                    logger.error("Failed to fetch live IDs: HTTP %d", response.status_code)
+                    logger.error(f"Failed to fetch live IDs: HTTP {response.status_code}")
         except Exception as e:
-            logger.error("Error fetching live IDs: %s", str(e))
+            logger.error(f"Error fetching live IDs: {str(e)}")
             import traceback
             logger.error(traceback.format_exc())
         
         return self.live_ids_data
-    
     async def fetch_static_stock_details(self):
         """Fetch additional static stock details including is_san and gpe"""
         logger.info("Fetching static stock details from %s", self.static_details_url)
@@ -348,7 +348,10 @@ class StockMetadataClient:
                 result[stock_id] = {
                     'name': data.get('name', ''),
                     'Full_name': data.get('Full_name', ''),
+                    'min_lot': data.get('min_lot', ''),
+                    'max_lot': data.get('max_lot', '')
                 }
+            logger.info(f"Using live_ids_data with {len(result)} stocks")
         # Fall back to metadata if live_ids_data is empty
         elif self.metadata:
             for stock_id, data in self.metadata.items():
@@ -356,8 +359,11 @@ class StockMetadataClient:
                     result[stock_id] = {
                         'name': data.get('name', ''),
                         'Full_name': data.get('Full_name', ''),
+                        'min_lot': None,
+                        'max_lot': None
                     }
-                    
+            logger.info(f"Using metadata fallback with {len(result)} stocks")
+        
         return result
 
 # Global singleton instance

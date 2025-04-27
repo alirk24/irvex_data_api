@@ -480,29 +480,27 @@ class StockIdsConsumer(AsyncWebsocketConsumer):
         try:
             # To track changes between updates
             last_data_hash = None
+            initial_send = True  # Flag to force sending data on first run
             
             while True:
                 try:
-                    # Ensure we have metadata loaded
-                    if not self.metadata_client.live_ids_data:
+                    # Ensure we have metadata loaded - force a fresh fetch to test
+                    if not self.metadata_client.live_ids_data or initial_send:
+                        logger.info("Fetching fresh live IDs data...")
                         await self.metadata_client.fetch_live_ids()
+                        logger.info(f"Fetch completed, got {len(self.metadata_client.live_ids_data) if self.metadata_client.live_ids_data else 0} stock IDs")
                     
                     # Get the stock IDs and names
                     stock_ids_and_names = self.metadata_client.get_all_ids_and_names()
                     
                     if not stock_ids_and_names:
                         logger.info("No stock IDs data available yet, waiting...")
-                        await asyncio.sleep(5)  # Wait longer for initial data
+                        await asyncio.sleep(5)  # Wait before retrying
                         continue
                     
-                    # Create a hash of the data to check for changes
-                    current_data_hash = hash(frozenset(stock_ids_and_names.items()))
-                    
-                    # Only send if there are changes or it's the first time
-                    if current_data_hash != last_data_hash:
-                        last_data_hash = current_data_hash
-                        
-                        logger.info(f"Sending stock IDs update with {len(stock_ids_and_names)} stocks")
+                    # Force send on the first successful fetch
+                    if initial_send:
+                        logger.info(f"Initial data available, sending {len(stock_ids_and_names)} stock IDs")
                         
                         # Only send if we're still connected
                         if self.is_connected:
@@ -513,18 +511,44 @@ class StockIdsConsumer(AsyncWebsocketConsumer):
                                     'count': len(stock_ids_and_names),
                                     'data': stock_ids_and_names
                                 }))
+                                logger.info("Initial stock IDs update sent successfully")
+                                initial_send = False  # Reset the flag after successful send
                             except Exception as send_error:
-                                logger.error(f"Error sending stock IDs updates: {send_error}")
-                                # If we fail to send, the connection might be closed
+                                logger.error(f"Error sending initial stock IDs update: {send_error}")
                                 if not self.is_connected:
                                     return
                         else:
                             return  # Exit if we're no longer connected
                     else:
-                        logger.info("No changes in stock IDs data, skipping update")
+                        # For subsequent updates, only send if there are changes
+                        current_data_str = json.dumps(stock_ids_and_names, sort_keys=True)
+                        current_data_hash = hash(current_data_str)
+                        
+                        if current_data_hash != last_data_hash:
+                            last_data_hash = current_data_hash
+                            
+                            logger.info(f"Detected changes in stock IDs, sending update with {len(stock_ids_and_names)} stocks")
+                            
+                            # Only send if we're still connected
+                            if self.is_connected:
+                                try:
+                                    await self.send(text_data=json.dumps({
+                                        'type': 'stock_ids_update',
+                                        'timestamp': datetime.now().isoformat(),
+                                        'count': len(stock_ids_and_names),
+                                        'data': stock_ids_and_names
+                                    }))
+                                    logger.info("Stock IDs update sent successfully")
+                                except Exception as send_error:
+                                    logger.error(f"Error sending stock IDs update: {send_error}")
+                                    if not self.is_connected:
+                                        return
+                            else:
+                                return  # Exit if we're no longer connected
+                        else:
+                            logger.info("No changes in stock IDs data, skipping update")
                     
-                    # Wait before checking for updates again (60 seconds)
-                    # We use a longer interval since this data doesn't change frequently
+                    # Wait before checking for updates again
                     await asyncio.sleep(60)
                     
                 except Exception as loop_error:
@@ -554,7 +578,6 @@ class StockIdsConsumer(AsyncWebsocketConsumer):
                     }))
                 except:
                     pass
-    
     @property
     def is_connected(self):
         """Check if the WebSocket is still connected"""
