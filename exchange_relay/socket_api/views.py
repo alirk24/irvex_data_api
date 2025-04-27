@@ -10,3 +10,7 @@ class WebSocketDebugView(TemplateView):
 
 class AllStocksDebugView(TemplateView):
     template_name = 'socket_api/all_stocks_debug.html'
+    
+
+class StockIdsDebugView(TemplateView):
+    template_name = 'socket_api/stock_ids_debug.html'

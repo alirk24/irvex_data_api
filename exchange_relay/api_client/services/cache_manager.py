@@ -110,7 +110,10 @@ class ExchangeDataCache:
                         'nav': stock_meta.get('nav', None),  # Change to None
                         # Add the new fields
                         'is_san': stock_meta.get('is_san', None),
-                        'gpe': stock_meta.get('gpe', None)
+                        'gpe': stock_meta.get('gpe', None),
+                         # Add min_lot and max_lot
+                        'min_lot': stock_meta.get('min_lot', None),
+                        'max_lot': stock_meta.get('max_lot', None)
                     }
                     
     async def get_all_metadata(self):

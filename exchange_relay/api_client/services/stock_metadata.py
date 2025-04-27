@@ -15,12 +15,42 @@ class StockMetadataClient:
         self.details_url = "http://213.232.126.219:2624/dideban/silver/stk_details/"
         # Add the new static details URL
         self.static_details_url = "http://213.232.126.219:2624/dideban/gold/stk_details_static/"
+        # Add the new live IDs URL
+        self.live_ids_url = "http://213.232.126.219:2624/dideban/livetseids/"
         self.last_update = None
         self.metadata = {}
         self.detail_data = {}
         self.static_detail_data = {}  # Add this to store the static details
+        self.live_ids_data = {}  # Add this to store the live IDs data
         self.update_interval = timedelta(days=1)
         self.iran_timezone = pytz.timezone('Asia/Tehran')
+    
+    async def fetch_live_ids(self):
+        """Fetch the live IDs data which includes min_lot and max_lot"""
+        logger.info("Fetching live IDs from %s", self.live_ids_url)
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(self.live_ids_url, timeout=30.0)
+                
+                if response.status_code == 200:
+                    # Parse JSON response
+                    live_ids_data = response.json()
+                    if isinstance(live_ids_data, list) and len(live_ids_data) > 0:
+                        # The API returns a list with a single object where keys are stock IDs
+                        self.live_ids_data = live_ids_data[0]
+                        logger.info("Successfully fetched live IDs for %d stocks", len(self.live_ids_data))
+                        return self.live_ids_data
+                    else:
+                        logger.error("Invalid live IDs format received")
+                else:
+                    logger.error("Failed to fetch live IDs: HTTP %d", response.status_code)
+        except Exception as e:
+            logger.error("Error fetching live IDs: %s", str(e))
+            import traceback
+            logger.error(traceback.format_exc())
+        
+        return self.live_ids_data
+    
     async def fetch_static_stock_details(self):
         """Fetch additional static stock details including is_san and gpe"""
         logger.info("Fetching static stock details from %s", self.static_details_url)
@@ -49,6 +79,16 @@ class StockMetadataClient:
         """Get additional static details for a specific stock"""
         if stock_id in self.static_detail_data:
             return self.static_detail_data[stock_id]
+        return None
+    
+    def get_live_stock_ids(self) -> Dict[str, Dict[str, Any]]:
+        """Get the live IDs data"""
+        return self.live_ids_data
+    
+    def get_stock_live_id_data(self, stock_id: str) -> Optional[Dict[str, Any]]:
+        """Get the live ID data for a specific stock"""
+        if stock_id in self.live_ids_data:
+            return self.live_ids_data[stock_id]
         return None
     
     async def should_update(self, force=False):
@@ -101,6 +141,8 @@ class StockMetadataClient:
                         await self.fetch_stock_details()
                         # Also fetch static details with is_san and gpe
                         await self.fetch_static_stock_details()
+                        # Fetch live IDs data for min_lot and max_lot
+                        await self.fetch_live_ids()
                         # Update last_update time with Iran timezone
                         now = datetime.now()
                         self.last_update = now.astimezone(self.iran_timezone) if now.tzinfo else self.iran_timezone.localize(now)
@@ -158,7 +200,7 @@ class StockMetadataClient:
         return None
     
     def get_simplified_metadata(self) -> Dict[str, Dict[str, Any]]:
-        """Get simplified metadata with only the needed fields, including PE, tmax, tmin, NAV"""
+        """Get simplified metadata with only the needed fields, including PE, tmax, tmin, NAV, min_lot, max_lot"""
         simplified = {}
         logger.info(f"Creating simplified metadata with {len(self.metadata)} stocks and {len(self.detail_data)} detail records")
         
@@ -172,7 +214,6 @@ class StockMetadataClient:
                     'valid': data.get('valid', ''),
                     'exchange_name': data.get('exchange_name', ''),
                     'industry_name': data.get('industry_name', ''),
-                    
                 }
                 
                 # Add the additional details if available
@@ -214,14 +255,26 @@ class StockMetadataClient:
                         'gpe': None
                     })
                 
+                # Add min_lot and max_lot from live IDs data
+                live_id_data = self.get_stock_live_id_data(stock_id)
+                if live_id_data:
+                    stock_info.update({
+                        'min_lot': live_id_data.get('min_lot', None),
+                        'max_lot': live_id_data.get('max_lot', None)
+                    })
+                else:
+                    stock_info.update({
+                        'min_lot': None,
+                        'max_lot': None
+                    })
+                
                 simplified[stock_id] = stock_info
                 
         logger.info(f"Created simplified metadata with {len(simplified)} valid stocks")
         return simplified
-        
     
     def get_stock_metadata(self, stock_id: str) -> Dict[str, Any]:
-        """Get metadata for a specific stock, including PE, tmax, tmin, NAV"""
+        """Get metadata for a specific stock, including PE, tmax, tmin, NAV, min_lot, max_lot"""
         result = {}
         
         if stock_id in self.metadata:
@@ -256,6 +309,7 @@ class StockMetadataClient:
                     'tmin': None,
                     'nav': None
                 })
+                
             # Add static details if available
             static_detail = self.get_static_stock_detail(stock_id)
             if static_detail:
@@ -268,6 +322,42 @@ class StockMetadataClient:
                     'is_san': None,
                     'gpe': None
                 })
+                
+            # Add min_lot and max_lot from live IDs data
+            live_id_data = self.get_stock_live_id_data(stock_id)
+            if live_id_data:
+                result.update({
+                    'min_lot': live_id_data.get('min_lot', None),
+                    'max_lot': live_id_data.get('max_lot', None)
+                })
+            else:
+                result.update({
+                    'min_lot': None,
+                    'max_lot': None
+                })
+                
+        return result
+    
+    def get_all_ids_and_names(self) -> Dict[str, Dict[str, str]]:
+        """Get all stock IDs and names from the live IDs data"""
+        result = {}
+        
+        # First try to use live_ids_data which has more stocks
+        if self.live_ids_data:
+            for stock_id, data in self.live_ids_data.items():
+                result[stock_id] = {
+                    'name': data.get('name', ''),
+                    'Full_name': data.get('Full_name', ''),
+                }
+        # Fall back to metadata if live_ids_data is empty
+        elif self.metadata:
+            for stock_id, data in self.metadata.items():
+                if data.get('valid') == '1':  # Only include valid stocks
+                    result[stock_id] = {
+                        'name': data.get('name', ''),
+                        'Full_name': data.get('Full_name', ''),
+                    }
+                    
         return result
 
 # Global singleton instance

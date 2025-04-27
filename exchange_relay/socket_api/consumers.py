@@ -6,7 +6,9 @@ from django.apps import apps
 from api_client.services.cache_manager import get_cache
 import logging
 from datetime import datetime
+from api_client.services.stock_metadata import get_metadata_client
 
+logger = logging.getLogger(__name__)
 
 logger = logging.getLogger(__name__)
 # socket_api/consumers.py - Add this new consumer class
@@ -148,6 +150,9 @@ class AllStocksDataConsumer(AsyncWebsocketConsumer):
                                 # Add the new fields
                                 enhanced_data['is_san'] = metadata.get('is_san', None)
                                 enhanced_data['gpe'] = metadata.get('gpe', None)
+                                # Add min_lot and max_lot fields
+                                enhanced_data['min_lot'] = metadata.get('min_lot', None)
+                                enhanced_data['max_lot'] = metadata.get('max_lot', None)
                             except Exception as e:
                                 logger.error(f"Error processing stock {stock_id}: {e}")
                                 # Continue with basic data if there's an error
@@ -401,3 +406,156 @@ class ExchangeDataConsumer(AsyncWebsocketConsumer):
                 }))
             except:
                 pass
+            
+            
+
+class StockIdsConsumer(AsyncWebsocketConsumer):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.update_task = None
+        # Get the shared cache instance
+        self.cache_instance = get_cache()
+        # Get the metadata client
+        self.metadata_client = get_metadata_client()
+        
+    async def connect(self):
+        logger.info("Client connecting to StockIds WebSocket")
+        await self.accept()
+        logger.info("Client connected successfully to StockIds")
+        await self.send(text_data=json.dumps({
+            'type': 'connection_status',
+            'status': 'connected',
+            'message': 'Connected to stock IDs service'
+        }))
+        
+        # Start sending updates immediately
+        self.update_task = asyncio.create_task(self.send_stock_ids_updates())
+    
+    async def disconnect(self, close_code):
+        logger.info(f"Client disconnected from StockIds with code: {close_code}")
+        # Cancel the update task if it's running
+        if self.update_task:
+            self.update_task.cancel()
+            try:
+                await self.update_task
+            except asyncio.CancelledError:
+                logger.info("Update task cancelled successfully")
+            except Exception as e:
+                logger.error(f"Error cancelling update task: {e}")
+            
+    async def receive(self, text_data):
+        """Handle incoming messages, but since this is a broadcast channel, we just acknowledge"""
+        logger.info(f"Received message on StockIds: {text_data}")
+        try:
+            data = json.loads(text_data)
+            
+            # Handle a refresh request
+            if data.get('type') == 'refresh':
+                await self.metadata_client.fetch_live_ids()
+                await self.send(text_data=json.dumps({
+                    'type': 'refresh_status',
+                    'status': 'success',
+                    'message': 'Stock IDs refreshed successfully'
+                }))
+            else:
+                # For other messages, just echo back
+                await self.send(text_data=json.dumps({
+                    'type': 'echo',
+                    'data': data
+                }))
+                
+        except json.JSONDecodeError:
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': 'Invalid JSON format'
+            }))
+        except Exception as e:
+            await self.send(text_data=json.dumps({
+                'type': 'error',
+                'message': f'Error processing request: {str(e)}'
+            }))
+    
+    async def send_stock_ids_updates(self):
+        """Background task to send stock IDs and names to the client"""
+        try:
+            # To track changes between updates
+            last_data_hash = None
+            
+            while True:
+                try:
+                    # Ensure we have metadata loaded
+                    if not self.metadata_client.live_ids_data:
+                        await self.metadata_client.fetch_live_ids()
+                    
+                    # Get the stock IDs and names
+                    stock_ids_and_names = self.metadata_client.get_all_ids_and_names()
+                    
+                    if not stock_ids_and_names:
+                        logger.info("No stock IDs data available yet, waiting...")
+                        await asyncio.sleep(5)  # Wait longer for initial data
+                        continue
+                    
+                    # Create a hash of the data to check for changes
+                    current_data_hash = hash(frozenset(stock_ids_and_names.items()))
+                    
+                    # Only send if there are changes or it's the first time
+                    if current_data_hash != last_data_hash:
+                        last_data_hash = current_data_hash
+                        
+                        logger.info(f"Sending stock IDs update with {len(stock_ids_and_names)} stocks")
+                        
+                        # Only send if we're still connected
+                        if self.is_connected:
+                            try:
+                                await self.send(text_data=json.dumps({
+                                    'type': 'stock_ids_update',
+                                    'timestamp': datetime.now().isoformat(),
+                                    'count': len(stock_ids_and_names),
+                                    'data': stock_ids_and_names
+                                }))
+                            except Exception as send_error:
+                                logger.error(f"Error sending stock IDs updates: {send_error}")
+                                # If we fail to send, the connection might be closed
+                                if not self.is_connected:
+                                    return
+                        else:
+                            return  # Exit if we're no longer connected
+                    else:
+                        logger.info("No changes in stock IDs data, skipping update")
+                    
+                    # Wait before checking for updates again (60 seconds)
+                    # We use a longer interval since this data doesn't change frequently
+                    await asyncio.sleep(60)
+                    
+                except Exception as loop_error:
+                    logger.error(f"Error in stock IDs update loop: {loop_error}")
+                    import traceback
+                    logger.error(traceback.format_exc())
+                    # Continue running even after an error, with a small delay
+                    await asyncio.sleep(5)
+                
+        except asyncio.CancelledError:
+            # Task was cancelled, clean up
+            logger.info("StockIds update task cancelled")
+            raise  # Re-raise to properly handle cancellation
+            
+        except Exception as e:
+            # Log any errors
+            logger.error(f"Error in send_stock_ids_updates: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # Try to notify the client if we're still connected
+            if self.is_connected:
+                try:
+                    await self.send(text_data=json.dumps({
+                        'type': 'error',
+                        'message': f'Update service encountered an error: {str(e)}'
+                    }))
+                except:
+                    pass
+    
+    @property
+    def is_connected(self):
+        """Check if the WebSocket is still connected"""
+        return hasattr(self, 'scope') and self.scope is not None and 'client' in self.scope

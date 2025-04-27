@@ -5,6 +5,8 @@ from django.apps import apps
 import asyncio
 from django.http import JsonResponse  # Import jsonResponse
 
+from api_client.services.stock_metadata import get_metadata_client
+
 
 from django.views import View
 from django.http import JsonResponse
@@ -158,3 +160,22 @@ class AllStocksSummaryView(APIView):
         # Get summary data for all stocks
         summary = loop.run_until_complete(cache_instance.get_all_stocks_summary())
         return Response(summary)
+    
+    
+# Add this to api_client/views.py
+
+
+class StockIdsView(APIView):
+    """API view to get stock IDs and names"""
+    
+    def get(self, request):
+        # Get the metadata client
+        metadata_client = get_metadata_client()
+        
+        # Get all stock IDs and names
+        stock_ids_and_names = metadata_client.get_all_ids_and_names()
+        
+        return Response({
+            'count': len(stock_ids_and_names),
+            'data': stock_ids_and_names
+        })
