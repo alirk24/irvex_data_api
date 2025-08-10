@@ -1,0 +1,166 @@
+<!-- socket_api/templates/socket_api/test.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+    <style>
+        #log {
+            height: 300px;
+            overflow-y: scroll;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 20px;
+        }
+        .message {
+            margin-bottom: 5px;
+            padding: 5px;
+            border-bottom: 1px solid #eee;
+        }
+        .success { color: green; }
+        .error { color: red; }
+        .info { color: blue; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Test</h1>
+    
+    <div id="connection-status">Status: Not connected</div>
+    
+    <h2>Connection Controls</h2>
+    <button id="connect">Connect</button>
+    <button id="disconnect">Disconnect</button>
+    
+    <h2>Subscribe to Stocks</h2>
+    <input id="stock-input" type="text" placeholder="Enter stock code">
+    <button id="subscribe">Subscribe</button>
+    
+    <h2>Log</h2>
+    <div id="log"></div>
+    
+    <script>
+        let socket = null;
+        const subscribedStocks = new Set();
+        
+        function logMessage(message, type = 'info') {
+            const log = document.getElementById('log');
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${type}`;
+            msgDiv.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            log.appendChild(msgDiv);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function updateStatus(status) {
+            document.getElementById('connection-status').textContent = `Status: ${status}`;
+        }
+        
+        function connectWebSocket() {
+            if (socket) {
+                logMessage('Already connected, disconnecting first...', 'info');
+                socket.close();
+            }
+            
+            try {
+                socket = new WebSocket(`ws://${window.location.host}/ws/exchange/`);
+                
+                socket.onopen = function(e) {
+                    updateStatus('Connected');
+                    logMessage('Connection established', 'success');
+                    
+                    // Re-subscribe to any existing subscriptions
+                    if (subscribedStocks.size > 0) {
+                        const stocksArray = Array.from(subscribedStocks);
+                        logMessage(`Re-subscribing to: ${stocksArray.join(', ')}`, 'info');
+                        socket.send(JSON.stringify({
+                            'type': 'subscribe',
+                            'stocks': stocksArray
+                        }));
+                    }
+                };
+                
+                socket.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        logMessage(`Received: ${data.type} data`, 'success');
+                        
+                        // Log a summarized version of the data
+                        if (data.type === 'stock_update') {
+                            const stockData = data.data;
+                            const summary = {
+                                stock: data.stock,
+                                lastPrice: stockData.pl && stockData.pl.length ? stockData.pl[stockData.pl.length - 1] : null,
+                                lastVolume: stockData.tvol && stockData.tvol.length ? stockData.tvol[stockData.tvol.length - 1] : null
+                            };
+                            console.log('Stock update:', summary);
+                        } else if (data.type === 'summary_update') {
+                            console.log('Summary update with', Object.keys(data.data).length, 'stocks');
+                        }
+                    } catch (e) {
+                        logMessage(`Error parsing message: ${e.message}`, 'error');
+                        console.error(e);
+                    }
+                };
+                
+                socket.onclose = function(event) {
+                    if (event.wasClean) {
+                        updateStatus('Closed');
+                        logMessage(`Connection closed cleanly, code=${event.code} reason=${event.reason}`, 'info');
+                    } else {
+                        updateStatus('Connection died');
+                        logMessage('Connection died', 'error');
+                    }
+                };
+                
+                socket.onerror = function(error) {
+                    updateStatus('Error');
+                    logMessage(`WebSocket Error: ${error.message}`, 'error');
+                    console.error('WebSocket Error:', error);
+                };
+            } catch (e) {
+                updateStatus('Connection Failed');
+                logMessage(`Failed to connect: ${e.message}`, 'error');
+                console.error(e);
+            }
+        }
+        
+        document.getElementById('connect').addEventListener('click', connectWebSocket);
+        
+        document.getElementById('disconnect').addEventListener('click', function() {
+            if (socket) {
+                socket.close();
+                socket = null;
+            } else {
+                logMessage('Not connected', 'info');
+            }
+        });
+        
+        document.getElementById('subscribe').addEventListener('click', function() {
+            const stockInput = document.getElementById('stock-input');
+            const stockCode = stockInput.value.trim();
+            
+            if (!stockCode) {
+                logMessage('Please enter a stock code', 'error');
+                return;
+            }
+            
+            if (!socket || socket.readyState !== WebSocket.OPEN) {
+                logMessage('Not connected to WebSocket', 'error');
+                return;
+            }
+            
+            subscribedStocks.add(stockCode);
+            
+            socket.send(JSON.stringify({
+                'type': 'subscribe',
+                'stocks': [stockCode]
+            }));
+            
+            logMessage(`Subscribed to stock: ${stockCode}`, 'success');
+            stockInput.value = '';
+        });
+        
+        // Auto-connect on page load
+        document.addEventListener('DOMContentLoaded', connectWebSocket);
+    </script>
+</body>
+</html>
