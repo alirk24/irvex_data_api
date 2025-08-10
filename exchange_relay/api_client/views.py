@@ -231,3 +231,25 @@ class StockNamesOnlyView(APIView):
             }
         
         return Response(simplified_data)
+
+
+class StockNameToIdView(APIView):
+    """API view to get stock names as keys with IDs as values (reverse mapping)"""
+    
+    def get(self, request):
+        # Get the metadata client
+        metadata_client = get_metadata_client()
+        
+        # Get all stock IDs and names
+        stock_ids_and_names = metadata_client.get_all_ids_and_names()
+        
+        # Create reverse mapping: name -> id
+        reverse_data = {}
+        for stock_id, data in stock_ids_and_names.items():
+            stock_name = data.get('name', '')
+            if stock_name:  # Only add if name exists
+                reverse_data[stock_name] = {
+                    'id': stock_id
+                }
+        
+        return Response(reverse_data)
