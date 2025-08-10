@@ -211,3 +211,23 @@ class StockIdsView(APIView):
             'count': len(stock_ids_and_names),
             'data': stock_ids_and_names
         })
+
+
+class StockNamesOnlyView(APIView):
+    """API view to get only stock IDs and names (simplified)"""
+    
+    def get(self, request):
+        # Get the metadata client
+        metadata_client = get_metadata_client()
+        
+        # Get all stock IDs and names
+        stock_ids_and_names = metadata_client.get_all_ids_and_names()
+        
+        # Create simplified response with only ID and name
+        simplified_data = {}
+        for stock_id, data in stock_ids_and_names.items():
+            simplified_data[stock_id] = {
+                'name': data.get('name', '')
+            }
+        
+        return Response(simplified_data)

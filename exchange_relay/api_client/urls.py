@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
-from .views import DiagnosticView, DebugApiView, StockDataView, StockMetadataView, AllStocksSummaryView, StockIdsView
+from .views import DiagnosticView, DebugApiView, StockDataView, StockMetadataView, AllStocksSummaryView, StockIdsView, StockNamesOnlyView
 
 urlpatterns = [
     path('stocks/', StockDataView.as_view(), name='all-stocks'),
@@ -10,5 +10,6 @@ urlpatterns = [
     path('diagnostic/', DiagnosticView.as_view(), name='diagnostic'),
     path('debug/trigger-fetch/', DebugApiView.as_view(), name='debug-api'),
     path('stocks/summary/', AllStocksSummaryView.as_view(), name='all-stocks-summary'),
-    path('stock-ids/', StockIdsView.as_view(), name='stock-ids'),  # Add the new endpoint
+    path('stock-ids/', StockIdsView.as_view(), name='stock-ids'),  # Full stock data
+    path('stock-names/', StockNamesOnlyView.as_view(), name='stock-names-only'),  # Only IDs and names
 ]
